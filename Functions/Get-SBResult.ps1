@@ -1,0 +1,100 @@
+Function Get-SBResult
+{
+	<#
+		.SYNOPSIS
+		Executes a scriptblock request on the server and returns the result.
+
+		.DESCRIPTION
+		Called by the server side of the pipe to execute commands received from the client.
+		Takes a DataObject containing a request string (and optional parameters), creates a
+		scriptblock from it, invokes it, and stores the result back in the DataObject.
+
+		If the DataObject contains a Parameters property, these are appended to the
+		scriptblock as arguments. Parameters can be a string or a hashtable (converted
+		via ConvertTo-Parameters).
+
+		.PARAMETER DataObject
+		The data structure containing the request to execute. Must have a Request property
+		with the command string. Optionally includes Parameters and Data properties.
+
+		.PARAMETER Command
+		Alternative to DataObject - a direct command string to execute.
+
+		.EXAMPLE
+		$DataObject = Get-SBResult -DataObject $DataObject
+		Executes the command in $DataObject.Request and stores output in $DataObject.Result.
+
+		.EXAMPLE
+		$Result = Get-SBResult -Command 'Get-Process | Select-Object -First 5'
+		Executes the command string directly.
+
+		.INPUTS
+		DataObject - The pipe communication data structure, or a command string.
+
+		.OUTPUTS
+		The DataObject with the Result property populated, or Error property if execution failed.
+	#>
+
+	[CmdletBinding()]
+	Param (
+		[parameter(Mandatory,ParameterSetName = 'DataObject' ,HelpMessage = 'Pass the DataObject.')]
+		$DataObject,
+		[parameter(Mandatory,ParameterSetName = 'Command' ,HelpMessage = 'Pass the command line.')]
+		[String]$Command
+	)
+	Try
+	{
+		$Private:ErrorActionPreferenceSave = $ErrorActionPreference
+		Switch ($PsCmdlet.ParameterSetName)
+		{	
+			'Command'
+			{$Private:Request = $Command}
+			'DataObject'
+			{$Private:Request = $DataObject.$StrRequest}
+		}
+		if ($DataObject.$StrParameters)
+		{
+			# Create the scriptblock
+			Switch ($DataObject.$StrParameters.gettype().Name)
+			{
+				'string'
+				{$Private:MyArgs = '{0}' -f $DataObject.$StrParameters}
+				'hashtable'
+				{$Private:MyArgs = ConvertTo-Parameters -Hash $DataObject.$StrParameters}
+			}
+			$Private:SB = [ScriptBlock]::Create(('{0} {1}' -f $Private:Request, $Private:MyArgs))
+		}
+		Else
+		{$Private:SB = [ScriptBlock]::Create($Private:Request)}
+		If ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitVerbose)
+		{Show-VerboseData -Object $Private:SB -Display -Title 'Full Scriptblock request'}
+		# Echo the assembled scriptblock back to the client (bit 1 = server/client progress)
+		If ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitProgress)
+		{
+			$Private:DisplayStr = $Private:SB.ToString()
+			$Private:RedactCfg  = $ServerClientParams.$StrRedactPattern
+			If ($Private:RedactCfg -and $Private:RedactCfg.Option)
+			{
+				# Bit 1: built-in generic redaction -- 40+ char Base64/hex runs (quoted or bare)
+				If ($Private:RedactCfg.Option -band $RedactBitBuiltIn)
+				{ $Private:DisplayStr = $Private:DisplayStr -replace '[A-Za-z0-9+/=]{40,}', '<redacted>' }
+				# Bit 2: consumer-supplied regex pattern
+				If (($Private:RedactCfg.Option -band $RedactBitPattern) -and $Private:RedactCfg.Pattern)
+				{ $Private:DisplayStr = $Private:DisplayStr -replace $Private:RedactCfg.Pattern, '<redacted>' }
+				# Bit 4: consumer-supplied ScriptBlock -- receives display string, must return string
+				If (($Private:RedactCfg.Option -band $RedactBitCommand) -and $Private:RedactCfg.Command)
+				{ $Private:DisplayStr = & $Private:RedactCfg.Command $Private:DisplayStr }
+			}
+			Send-ProgressInfo -Type Console -String ('[Server] Executing: {0}' -f $Private:DisplayStr)
+		}
+		$ErrorActionPreference = 'Stop'
+		$DataObject.$StrResult = $Private:SB.InvokeReturnAsIs()
+	}
+	Catch
+	{
+		$ErrorActionPreference = $Private:ErrorActionPreferenceSave
+		$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+	}
+	$ErrorActionPreference = $Private:ErrorActionPreferenceSave
+	$DataObject
+}

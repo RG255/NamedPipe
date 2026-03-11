@@ -1,0 +1,5 @@
+# Claude Code tool configuration
+.claude/
+
+# Build utility - local only
+CreateModuleManifest.ps1
