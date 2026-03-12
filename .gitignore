@@ -3,3 +3,6 @@
 
 # Build utility - local only
 CreateModuleManifest.ps1
+
+# Per-file edit history archives
+*.history.zip
