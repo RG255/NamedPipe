@@ -8,7 +8,7 @@ Param (
 )
 If ($Spawned)
 {
-	#Set-PSBreakpoint -line 15 -Script L:\OneDrive\Documents\WindowsPowerShell\Modules\NamedPipe\0.6\FunctionsWindows\Start-PipeServerOrClient.ps1
+	#Set-PSBreakpoint -line 15 -Script L:\OneDrive\Documents\WindowsPowerShell\Modules\NamedPipe\0.7\FunctionsWindows\Start-PipeServerOrClient.ps1
 	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
 	# Bootstrap: $PSScriptRoot resolves to this script's installed FunctionsWindows\ directory.
 	# Import the owning NamedPipe manifest so ConvertFrom-Serial is available before we
@@ -17,7 +17,12 @@ If ($Spawned)
 	$ServerClientParams = ConvertFrom-Serial -Text $SerialData
 	# Import the consumer module (e.g. VHD). NamedPipe is already loaded above; importing
 	# VHD (which RequiredModules NamedPipe) or NamedPipe again are both no-ops for NamedPipe.
-	Import-Module -Name $ServerClientParams.ModuleToLoad.Name -RequiredVersion $ServerClientParams.ModuleToLoad.Version
+	# Prefer full path import (works even when $PSModulePath excludes network/OneDrive drives).
+	$Private:mtl = $ServerClientParams.ModuleToLoad
+	if ($Private:mtl.Path -and (Test-Path -Path $Private:mtl.Path))
+	{ Import-Module -Name $Private:mtl.Path -ErrorAction Stop }
+	else
+	{ Import-Module -Name $Private:mtl.Name -RequiredVersion $Private:mtl.Version -ErrorAction Stop }
 	# InfoDisplay bitmask: 1=server/client progress, 2=Show-VerboseData, 4=debug output
 	if ($ServerClientParams.$StrInfoDisplay -band 4)
 	{
@@ -35,7 +40,7 @@ If ($Spawned)
 	# Always use 'NamedPipe' here regardless of $ModuleName - the function lives in NamedPipe's scope
 	# Match by path: find the NamedPipe module whose ModuleBase contains this script file.
 	# This correctly identifies the owning version even when a newer NamedPipe version is
-	# simultaneously loaded (e.g. user profile loads v0.7, consumer dependency loads v0.6).
+	# simultaneously loaded (e.g. profile auto-imports v0.5, consumer module imports v0.7).
 	$Private:module = Get-Module -Name NamedPipe | Where-Object { $PSScriptRoot -like "$($_.ModuleBase)\*" } | Select-Object -First 1
 	if (-not $Private:module)
 	{
@@ -199,131 +204,297 @@ Function Start-PipeServerOrClient
 				$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
 				$ServerClientParams.$StrPipeInfo.$StrChunkSize = $ServerClientParams.$StrChunkSize
 				$ServerClientParams.$StrPipeInfo.$StrDepth = $ServerClientParams.$StrDepth
-				If ($ServerClientParams.$StrInfoDisplay -band 4)
+				Function Stop-HealthPipe
 				{
-					Write-Host 'DEBUG SERVER: StreamReader and StreamWriter created' -ForegroundColor Magenta
-					Write-Host "DEBUG SERVER: Pipe IsConnected = $($ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected)" -ForegroundColor Magenta
-				}
-				If ($ServerClientParams.$StrInfoDisplay -band 2)
-				{Show-VerboseData -Object $ServerClientParams.$StrPipeInfo -Display -Title 'PipeInfo after connection made'}
-				Do
-				{
+					[CmdletBinding(PositionalBinding = $False)]
+					Param (
+						[Parameter(Mandatory,HelpMessage = 'Provide the HealthPipeName')]
+						[String]$HealthPipeName,
+						[Parameter(Mandatory,HelpMessage = 'Provide the HealthRunspace')]
+						$HealthRunSpace,
+						[Parameter(Mandatory,HelpMessage = 'Provide the HealthPS')]
+						$HealthPS,
+						[Parameter(Mandatory,HelpMessage = 'Provide the HealthCts')]
+						$HealthCts
+					)
+					# Send STOP poison pill to unblock WaitForConnection in the health runspace.
+					# The health pipe ACL includes the server identity so this works even when elevated.
 					try
 					{
-						If ($ServerClientParams.$StrInfoDisplay -band 4)
-						{Write-Host 'DEBUG SERVER: Entering main loop, calling Receive-Data...' -ForegroundColor Magenta}
-						$DataObject = Receive-Data -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
-						If ($ServerClientParams.$StrInfoDisplay -band 4)
-						{Write-Host "DEBUG SERVER: Receive-Data returned, Type = $($DataObject.$StrType)" -ForegroundColor Green}
-						Switch ($DataObject.$StrType)
-						{
-							$StrScriptBlock
+						$StopClient = [System.IO.Pipes.NamedPipeClientStream]::new('.', $HealthPipeName, [System.IO.Pipes.PipeDirection]::InOut)
+						$StopClient.Connect(1000)
+						$StopWriter = [System.IO.StreamWriter]::new($StopClient)
+						$StopWriter.AutoFlush = $true
+						$StopWriter.WriteLine('STOP')
+						$StopClient.Dispose()
+					}
+					catch { $null = $_ }
+					Start-Sleep -Milliseconds 200
+					if ($HealthCts)
+					{
+						try { $HealthCts.Cancel() } catch { $null = $_ }
+						try { $HealthCts.Dispose() } catch { $null = $_ }
+					}
+					if ($HealthPS)
+					{
+						try { $HealthPS.Dispose() } catch { $null = $_ }
+					}
+					if ($HealthRunspace)
+					{
+						try { $HealthRunspace.Close() } catch { $null = $_ }
+						try { $HealthRunspace.Dispose() } catch { $null = $_ }
+					}
+				}
+				
+					# === Health pipe listener ===
+					# Start a background runspace that listens on PipeName.Health for PING/PONG
+					# health checks. Pipe security is built inside the runspace from the
+					# AccessIdentifier string array to avoid cross-runspace PipeSecurity object issues.
+					# The loop exits when a client connects and sends the literal string 'STOP'
+					# (the "poison pill"). The Finally block sends this signal before disposing
+					# the runspace. WaitForConnection() is synchronous and cannot be interrupted
+					# by CancellationToken in .NET Framework, so the poison pill is the only
+					# reliable way to unblock it.
+					$HealthPipeName = $ServerClientParams.$StrPipeInfo.$StrName + '.Health'
+					# Include server identity so Stop-HealthPipe can connect back even when elevated
+					$Private:HealthAccess = @($ServerClientParams.$StrAccessIdentifier) + @('{0}:Allow:ReadWrite' -f [Security.Principal.WindowsIdentity]::GetCurrent().Name)
+					$HealthRunspace = [RunspaceFactory]::CreateRunspace()
+					$HealthCts = [System.Threading.CancellationTokenSource]::new()
+					$HealthRunspace.Open()
+					$HealthPS = [PowerShell]::Create()
+					$HealthPS.Runspace = $HealthRunspace
+					$null = $HealthPS.AddScript({
+							param($hpn, $acc, $psVer, $Cts)
+							# Build pipe security inside the runspace from the AccessIdentifier string
+							# array. Building here avoids cross-runspace PipeSecurity object issues.
+							# Falls back to INTERACTIVE SID (S-1-5-4) when $acc is empty, ensuring
+							# a non-elevated caller can always health-check an elevated server.
+							$sec = $null
+							try
 							{
-								If ($ServerClientParams.$StrInfoDisplay -band 4)
-								{Write-Host 'DEBUG SERVER: Processing ScriptBlock request' -ForegroundColor Magenta}
-								If ($ServerClientParams.$StrInfoDisplay -band 2)
+								$sec = [System.IO.Pipes.PipeSecurity]::new()
+								if ($acc -and @($acc).Count -gt 0)
 								{
-									Show-VerboseData -Object $DataObject -Display -Title ('DataObject.{0}' -f $StrRequest)
-									If ($DataObject.$StrParameters)
-									{Show-VerboseData -Object $DataObject.$StrParameters -Display -Title ('DataObject.{0}' -f $StrParameters)}
-									If ($DataObject.$StrData)
-									{Show-VerboseData -Object $DataObject.$StrData -Display -Title ('DataObject.{0}' -f $StrData)}
+									foreach ($entry in $acc)
+									{
+										$parts   = $entry.Split(':')
+										$id      = $parts[0]
+										$access  = if ($parts.Count -gt 2) {$parts[2]} else {'ReadWrite'}
+										$control = if ($parts.Count -gt 1) {$parts[1]} else {'Allow'}
+										$sec.AddAccessRule([System.IO.Pipes.PipeAccessRule]::new($id, $access, $control))
+									}
 								}
-								$DataObject = Get-SBResult -DataObject $DataObject
-								If ($ServerClientParams.$StrInfoDisplay -band 2)
+								else
 								{
-									Show-VerboseData -Object ('Scriptblock Error: {0}' -f $DataObject.$StrError) -Display -Title 'ScriptBlock Error State'
-									Show-VerboseData -Object $DataObject.$StrResult -Display -Title ('DataObject.{0} {1}' -f $StrRequest, $StrResult)
+									$iSid = [System.Security.Principal.SecurityIdentifier]::new(
+									[System.Security.Principal.WellKnownSidType]::InteractiveSid, $null)
+									$sec.AddAccessRule([System.IO.Pipes.PipeAccessRule]::new($iSid, 'ReadWrite', 'Allow'))
 								}
-								If ($ServerClientParams.$StrInfoDisplay -band 4)
-								{Write-Host 'DEBUG SERVER: ScriptBlock processing done' -ForegroundColor Green}
 							}
-							$StrSecurity
+							catch { $sec = $null }
+							while ($true)
 							{
-								If ($ServerClientParams.$StrInfoDisplay -band 4)
-								{Write-Host 'DEBUG SERVER: Processing Security request' -ForegroundColor Magenta}
-								Try
-								{
-									$DataObject.$StrRequest = $DataObject.$StrType
-									if ($PSVersionTable.PSVersion.Major -gt 5)
-									{$DataObject.$StrResult =	[IO.Pipes.PipesAclExtensions]::GetAccessControl($ServerClientParams.$StrPipeInfo.$StrPipe)}
-									Else
-									{$DataObject.$StrResult = $ServerClientParams.$StrPipeInfo.$StrPipe.GetAccessControl().access}
-									If ($ServerClientParams.$StrInfoDisplay -band 4)
-									{Write-Host 'DEBUG SERVER: Security GetAccessControl done' -ForegroundColor Green}
-								}
-								catch
-								{
-									Write-Host "DEBUG SERVER: Security request FAILED: $_" -ForegroundColor Red
-									$DataObject.$StrResult = 'An error Occured getting the Pipe Security information'
-									$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
-								}
-							}
-							$StrExitPipe
-							{
-								If ($ServerClientParams.$StrInfoDisplay -band 4)
-								{Write-Host 'DEBUG SERVER: Processing ExitPipe request' -ForegroundColor Magenta}
+								$pipe = $null
 								try
 								{
-									$DataObject.$StrRequest = $DataObject.$StrType
-									$DataObject.$StrResult = ('Server is Exiting')
-									If ($ServerClientParams.$StrInfoDisplay -band 4)
-									{Write-Host 'DEBUG SERVER: ExitPipe processing done' -ForegroundColor Green}
+									if ($psVer -gt 5)
+									{
+										if ($sec)
+										{
+											$pipe = [System.IO.Pipes.NamedPipeServerStreamAcl]::Create(
+												$hpn,
+												[System.IO.Pipes.PipeDirection]::InOut,
+												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
+												[System.IO.Pipes.PipeTransmissionMode]::Byte,
+												[System.IO.Pipes.PipeOptions]::None,
+												0, 0, $sec
+											)
+										}
+										else
+										{
+											$pipe = [System.IO.Pipes.NamedPipeServerStream]::new(
+												$hpn,
+												[System.IO.Pipes.PipeDirection]::InOut,
+												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
+												[System.IO.Pipes.PipeTransmissionMode]::Byte,
+												[System.IO.Pipes.PipeOptions]::None
+											)
+										}
+									}
+									else
+									{
+										if ($sec)
+										{
+											$pipe = [System.IO.Pipes.NamedPipeServerStream]::new(
+												$hpn,
+												[System.IO.Pipes.PipeDirection]::InOut,
+												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
+												[System.IO.Pipes.PipeTransmissionMode]::Byte,
+												[System.IO.Pipes.PipeOptions]::None,
+												0, 0, $sec
+											)
+										}
+										else
+										{
+											$pipe = [System.IO.Pipes.NamedPipeServerStream]::new(
+												$hpn,
+												[System.IO.Pipes.PipeDirection]::InOut,
+												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
+												[System.IO.Pipes.PipeTransmissionMode]::Byte,
+												[System.IO.Pipes.PipeOptions]::None
+											)
+										}
+									}
+									$pipe.WaitForConnection()
+									$hReader = [System.IO.StreamReader]::new($pipe)
+									$hWriter = [System.IO.StreamWriter]::new($pipe)
+									$hWriter.AutoFlush = $true
+									$msg = $hReader.ReadLine()
+									if ($msg -eq 'STOP')
+									{
+										# Poison pill - exit the health loop cleanly.
+										break
+									}
+									if ($msg -and $msg.StartsWith('PING:'))
+									{
+										$hWriter.WriteLine('PONG:' + $msg.Substring(5))
+									}
 								}
-								catch
-								{$DataObject.$StrError = NamedPipe\Get-MyErrors -Return}
+								catch { $null = $_ }
+								finally
+								{
+									if ($pipe) { try { $pipe.Dispose() } catch { $null = $_ } }
+								}
+							}
+					}).AddArgument($HealthPipeName).AddArgument($Private:HealthAccess).AddArgument($PSVersionTable.PSVersion.Major).AddArgument($HealthCts)
+					$null = $HealthPS.BeginInvoke()
+					# === End health pipe listener ===
+
+					If ($ServerClientParams.$StrInfoDisplay -band 4)
+					{
+						Write-Host 'DEBUG SERVER: StreamReader and StreamWriter created' -ForegroundColor Magenta
+						Write-Host "DEBUG SERVER: Pipe IsConnected = $($ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected)" -ForegroundColor Magenta
+					}
+					If ($ServerClientParams.$StrInfoDisplay -band 2)
+					{Show-VerboseData -Object $ServerClientParams.$StrPipeInfo -Display -Title 'PipeInfo after connection made'}
+					Do
+					{
+						try
+						{
+							If ($ServerClientParams.$StrInfoDisplay -band 4)
+							{Write-Host 'DEBUG SERVER: Entering main loop, calling Receive-Data...' -ForegroundColor Magenta}
+							$DataObject = Receive-Data -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+							If ($ServerClientParams.$StrInfoDisplay -band 4)
+							{Write-Host "DEBUG SERVER: Receive-Data returned, Type = $($DataObject.$StrType)" -ForegroundColor Green}
+							Switch ($DataObject.$StrType)
+							{
+								$StrScriptBlock
+								{
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host 'DEBUG SERVER: Processing ScriptBlock request' -ForegroundColor Magenta}
+									If ($ServerClientParams.$StrInfoDisplay -band 2)
+									{
+										Show-VerboseData -Object $DataObject -Display -Title ('DataObject.{0}' -f $StrRequest)
+										If ($DataObject.$StrParameters)
+										{Show-VerboseData -Object $DataObject.$StrParameters -Display -Title ('DataObject.{0}' -f $StrParameters)}
+										If ($DataObject.$StrData)
+										{Show-VerboseData -Object $DataObject.$StrData -Display -Title ('DataObject.{0}' -f $StrData)}
+									}
+									$DataObject = Get-SBResult -DataObject $DataObject
+									If ($ServerClientParams.$StrInfoDisplay -band 2)
+									{
+										Show-VerboseData -Object ('Scriptblock Error: {0}' -f $DataObject.$StrError) -Display -Title 'ScriptBlock Error State'
+										Show-VerboseData -Object $DataObject.$StrResult -Display -Title ('DataObject.{0} {1}' -f $StrRequest, $StrResult)
+									}
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host 'DEBUG SERVER: ScriptBlock processing done' -ForegroundColor Green}
+								}
+								$StrSecurity
+								{
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host 'DEBUG SERVER: Processing Security request' -ForegroundColor Magenta}
+									Try
+									{
+										$DataObject.$StrRequest = $DataObject.$StrType
+										if ($PSVersionTable.PSVersion.Major -gt 5)
+										{$DataObject.$StrResult =	[IO.Pipes.PipesAclExtensions]::GetAccessControl($ServerClientParams.$StrPipeInfo.$StrPipe)}
+										Else
+										{$DataObject.$StrResult = $ServerClientParams.$StrPipeInfo.$StrPipe.GetAccessControl().access}
+										If ($ServerClientParams.$StrInfoDisplay -band 4)
+										{Write-Host 'DEBUG SERVER: Security GetAccessControl done' -ForegroundColor Green}
+									}
+									catch
+									{
+										Write-Host "DEBUG SERVER: Security request FAILED: $_" -ForegroundColor Red
+										$DataObject.$StrResult = 'An error Occured getting the Pipe Security information'
+										$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+									}
+								}
+								$StrExitPipe
+								{
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host 'DEBUG SERVER: Processing ExitPipe request' -ForegroundColor Magenta}
+									try
+									{
+										$DataObject.$StrRequest = $DataObject.$StrType
+										$DataObject.$StrResult = ('Server is Exiting')
+										If ($ServerClientParams.$StrInfoDisplay -band 4)
+										{Write-Host 'DEBUG SERVER: ExitPipe processing done' -ForegroundColor Green}
+									}
+									catch
+									{$DataObject.$StrError = NamedPipe\Get-MyErrors -Return}
+								}
 							}
 						}
+						catch
+						{
+							Write-Host "DEBUG SERVER: Exception in main loop: $_" -ForegroundColor Red
+							$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+						}
+						If ($ServerClientParams.$StrInfoDisplay -band 4)
+						{Write-Host 'DEBUG SERVER: About to Send-Data response back to client' -ForegroundColor Magenta}
+						Send-Data -DataObject $DataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+						If ($ServerClientParams.$StrInfoDisplay -band 4)
+						{Write-Host 'DEBUG SERVER: Send-Data completed, looping back' -ForegroundColor Green}
 					}
-					catch
+					while ($ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected -and $DataObject.$StrType -inotmatch $StrExitPipe)
+					If ($ServerClientParams.Wait)
 					{
-						Write-Host "DEBUG SERVER: Exception in main loop: $_" -ForegroundColor Red
-						$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+						Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set
+						Pause
 					}
-					If ($ServerClientParams.$StrInfoDisplay -band 4)
-					{Write-Host 'DEBUG SERVER: About to Send-Data response back to client' -ForegroundColor Magenta}
-					Send-Data -DataObject $DataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
-					If ($ServerClientParams.$StrInfoDisplay -band 4)
-					{Write-Host 'DEBUG SERVER: Send-Data completed, looping back' -ForegroundColor Green}
 				}
-				while ($ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected -and $DataObject.$StrType -inotmatch $StrExitPipe)
-
-				If ($ServerClientParams.Wait)
+				Catch
 				{
 					Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set
+					NamedPipe\Get-MyErrors -Return
 					Pause
 				}
-			}
-			Catch
-			{
-				Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set
-				NamedPipe\Get-MyErrors -Return
-				Pause
-			}
-			Finally
-			{
-				# Ensure proper cleanup of resources
-				if ($ServerClientParams.$StrPipeInfo.$StrReader)
+				Finally
 				{
-					try 
-					{$ServerClientParams.$StrPipeInfo.$StrReader.Dispose()}
-					catch 
-					{}
-				}
-				if ($ServerClientParams.$StrPipeInfo.$StrWriter)
-				{
-					try 
-					{$ServerClientParams.$StrPipeInfo.$StrWriter.Dispose()}
-					catch 
-					{}
-				}
-				if ($ServerClientParams.$StrPipeInfo.$StrPipe)
-				{
-					try 
-					{$ServerClientParams.$StrPipeInfo.$StrPipe.Dispose()}
-					catch 
-					{}
-				}
+					Stop-HealthPipe -HealthPipeName $HealthPipeName -HealthRunSpace $HealthRunSpace -HealthPS $HealthPS -healthCts $HealthCts
+					# Ensure proper cleanup of resources
+					if ($ServerClientParams.$StrPipeInfo.$StrReader)
+					{
+						try 
+						{$ServerClientParams.$StrPipeInfo.$StrReader.Dispose()}
+						catch 
+						{}
+					}
+					if ($ServerClientParams.$StrPipeInfo.$StrWriter)
+					{
+						try 
+						{$ServerClientParams.$StrPipeInfo.$StrWriter.Dispose()}
+						catch 
+						{}
+					}
+					if ($ServerClientParams.$StrPipeInfo.$StrPipe)
+					{
+						try
+						{$ServerClientParams.$StrPipeInfo.$StrPipe.Dispose()}
+						catch
+						{}
+					}
 			}
 		}
 	}

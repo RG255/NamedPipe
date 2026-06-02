@@ -21,16 +21,16 @@ for each operation.
 
 ## Installation
 
-Copy the `0.6` folder to your PowerShell modules directory:
+Copy the `0.7` folder to your PowerShell modules directory:
 
 ```
-Documents\WindowsPowerShell\Modules\NamedPipe\0.6\
+Documents\WindowsPowerShell\Modules\NamedPipe\0.7\
 ```
 
 Then import:
 
 ```powershell
-Import-Module NamedPipe -RequiredVersion 0.6
+Import-Module NamedPipe -RequiredVersion 0.7
 ```
 
 ## Documentation

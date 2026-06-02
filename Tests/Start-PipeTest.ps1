@@ -6,14 +6,14 @@ Param (
 	[String]$PipeName = $Null,
 	[Parameter(Dontshow = $True)]
 	[String[]]$AccessIdentifier = @(),
-	[Parameter(DontShow = $True)]
+	[Parameter(DontShow = $False)]
 	[Switch]$AdminRequired,
-	[Parameter(DontShow = $True)]
+	[Parameter(DontShow = $False)]
 	[Switch]$Wait,
 	[Parameter(HelpMessage = 'Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug (7=all)')]
 	[ValidateRange(0, 7)]
 	[int]$InfoDisplay = 0,
-	[Parameter(DontShow = $True)]
+	[Parameter(DontShow = $False)]
 	[Switch]$NoExitOnError,
 	[Parameter(HelpMessage = 'Serialization depth. Default 2. Increase for deeply nested objects (avoid high values for ACL objects)')]
 	[ValidateRange(1, 100)]
@@ -28,7 +28,7 @@ Param (
 )
 
 Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.6
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
 function Invoke-RequiredActions
 {
 	<#
@@ -202,9 +202,39 @@ $Session = Start-PipeSession -MyParameters $Private:MyOptions
 $ServerClientParams = $Session.$StrServerClientParams
 $SendRequestParams  = $Session.$StrSendRequestParams
 
+
+# ===== HEALTH PIPE CHECK =====
+
+Write-Host ("`n[Health] Testing health pipe for [{0}]..." -f $ServerClientParams.$StrPipeInfo.$StrName) -ForegroundColor Cyan
+
+$HealthResult = Test-PipeSession -PipeInfo $ServerClientParams.$StrPipeInfo
+
+If ($HealthResult)
+
+{ Write-Host "[Health] PING/PONG OK - server process confirmed alive." -ForegroundColor Green }
+
+Else
+
+{ Write-Host "[Health] PING/PONG FAILED - server may not be responding." -ForegroundColor Red }
+
 Invoke-RequiredActions
+
+
+
+# ===== POST-ACTION HEALTH CHECK =====
+
+Write-Host "`n[Health] Post-action health check..." -ForegroundColor Cyan
+
+$HealthResult2 = Test-PipeSession -PipeInfo $ServerClientParams.$StrPipeInfo
+
+If ($HealthResult2)
+{ Write-Host "[Health] Server still alive after actions completed." -ForegroundColor Green }
+Else
+{ Write-Host "[Health] Post-action health check FAILED." -ForegroundColor Red }
+
+Show-VerboseData -Object $SendRequestParams.PipeInfo -Display -Title 'PipeName'
 
 Stop-PipeSession -SendRequestParams $SendRequestParams -PipeInfo $ServerClientParams.$StrPipeInfo
 
 Get-PSBreakpoint
-Remove-Breakpoints -All
+# Remove-Breakpoints -All

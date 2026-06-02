@@ -1,10 +1,10 @@
 #Requires -Modules Pester
 <#
     .SYNOPSIS
-    Pester tests for the NamedPipe module v0.6
+    Pester tests for the NamedPipe module v0.7
 
     .DESCRIPTION
-    Comprehensive test suite for NamedPipe module v0.6 including:
+    Comprehensive test suite for NamedPipe module v0.7 including:
     - Serialization with chunking support
     - Utility functions
     - Window functions
@@ -39,9 +39,9 @@ Describe 'Module Import' {
         Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
     }
 
-    It 'Should be version 0.6' {
+    It 'Should be version 0.7' {
         $Module = Get-Module -Name NamedPipe
-        $Module.Version.ToString() | Should -Be '0.6'
+        $Module.Version.ToString() | Should -Be '0.7'
     }
 
     It 'Should have a valid module version' {
@@ -868,9 +868,10 @@ Describe 'Depth Parameter Tests' -Tag 'Depth' {
                     }
                 }
             }
-            # With Depth=2, deep values may be truncated
+            # Depth=2 serialization should still complete without error
             $ShallowResult = ConvertTo-Serial -Object $Deep -Depth 2
             $ShallowDeserialized = ConvertFrom-Serial -Text $ShallowResult
+            $ShallowDeserialized | Should -Not -BeNullOrEmpty
 
             # With Depth=10, deep values should be preserved
             $DeepResult = ConvertTo-Serial -Object $Deep -Depth 10
@@ -1154,8 +1155,8 @@ Describe 'Test-PipeSession' -Tag 'Session' {
     }
 
     Context 'Health Check Logic' {
-        It 'Should throw for $null PipeInfo (mandatory parameter)' {
-            { Test-PipeSession -PipeInfo $null } | Should -Throw
+        It 'Should return $false for $null PipeInfo' {
+            Test-PipeSession -PipeInfo $null | Should -Be $false
         }
 
         It 'Should return $false for empty PipeInfo' {
@@ -1205,8 +1206,246 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
         $Default.Name | Should -Be 'NamedPipe'
     }
 
-    It 'Should have Version set to 0.6' {
+    It 'Should have Version set to 0.7' {
         $Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-        $Default.Version | Should -Be '0.6'
+        $Default.Version | Should -Be '0.7'
+    }
+}
+
+
+Describe 'Health Pipe Protocol' -Tag 'HealthPipe' {
+    # Tests that the dedicated .Health background pipe channel works correctly.
+    # Named pipes do not require administrator elevation, so all tests run in-process.
+    # The BeforeAll starts a background runspace acting as the health pipe server
+    # and creates a connected main pipe pair used to construct a fake PipeInfo for
+    # Test-PipeSession integration tests.
+    #
+    # Key literal values used here (module-scope $Str* vars are not accessible in Pester):
+    #   'Name'   = $StrName    'Pipe'   = $StrPipe
+    #   'Reader' = $StrReader  'Writer' = $StrWriter
+
+    BeforeAll {
+        # Unique base name scoped to this test run
+        $Script:HTestBase = 'NP_HealthTest_' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+
+        # Start health pipe server in a background runspace.
+        # Listens on $HTestBase.Health; loops to handle sequential connections.
+        # For each connection: reads PING:<nonce>, writes PONG:<nonce>.
+        # Exits when a client sends the literal string 'STOP' (poison pill).
+        # WaitForConnection() cannot be interrupted by CancellationToken in
+        # .NET Framework, so the poison pill is the only reliable exit mechanism.
+        $Script:HRS = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+        $Script:HRS.Open()
+        $Script:HPS = [System.Management.Automation.PowerShell]::Create()
+        $Script:HPS.Runspace = $Script:HRS
+        [void]$Script:HPS.AddScript({
+            param($Base)
+            $PipeName = $Base + '.Health'
+            while ($true)
+            {
+                $Srv = $null
+                try
+                {
+                    $Srv = [System.IO.Pipes.NamedPipeServerStream]::new(
+                        $PipeName,
+                        [System.IO.Pipes.PipeDirection]::InOut,
+                        [System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances
+                    )
+                    $Srv.WaitForConnection()
+                    $Rdr = [System.IO.StreamReader]::new($Srv)
+                    $Wtr = [System.IO.StreamWriter]::new($Srv)
+                    $Wtr.AutoFlush = $true
+                    $Line = $Rdr.ReadLine()
+                    if ($Line -eq 'STOP') { break }
+                    if ($Line -and $Line.StartsWith('PING:'))
+                    { $Wtr.WriteLine('PONG:' + $Line.Substring(5)) }
+                }
+                catch { }
+                finally { if ($Srv) { try { $Srv.Dispose() } catch { } } }
+            }
+        })
+        [void]$Script:HPS.AddArgument($Script:HTestBase)
+        $Script:HAsyncResult = $Script:HPS.BeginInvoke()
+        Start-Sleep -Milliseconds 300
+
+        # Create a connected main pipe pair for Phase 1 passive checks.
+        # WaitForConnectionAsync so the server side does not block the test thread.
+        $Script:MainServer = [System.IO.Pipes.NamedPipeServerStream]::new(
+            $Script:HTestBase + '.Main',
+            [System.IO.Pipes.PipeDirection]::InOut,
+            1
+        )
+        $Script:MainConnectTask = $Script:MainServer.WaitForConnectionAsync()
+        $Script:MainClient = [System.IO.Pipes.NamedPipeClientStream]::new(
+            '.', $Script:HTestBase + '.Main',
+            [System.IO.Pipes.PipeDirection]::InOut
+        )
+        $Script:MainClient.Connect(2000)
+        $null = $Script:MainConnectTask.Wait(2000)
+        $Script:MainReader = [System.IO.StreamReader]::new($Script:MainClient)
+        $Script:MainWriter = [System.IO.StreamWriter]::new($Script:MainClient)
+        $Script:MainWriter.AutoFlush = $true
+
+        # Fake PipeInfo using literal key strings (matches module $StrName/$StrPipe/$StrReader/$StrWriter)
+        $Script:FakePipeInfo = [PSCustomObject]@{
+            Name   = $Script:HTestBase
+            Pipe   = $Script:MainClient
+            Reader = $Script:MainReader
+            Writer = $Script:MainWriter
+        }
+    }
+
+    AfterAll {
+        # Send STOP poison pill to unblock WaitForConnection() so the health loop exits.
+        try
+        {
+            $Poison = [System.IO.Pipes.NamedPipeClientStream]::new('.', $Script:HTestBase + '.Health', [System.IO.Pipes.PipeDirection]::InOut)
+            $Poison.Connect(1000)
+            $PoisonW = [System.IO.StreamWriter]::new($Poison)
+            $PoisonW.AutoFlush = $true
+            $PoisonW.WriteLine('STOP')
+            $Poison.Dispose()
+        } catch { }
+        Start-Sleep -Milliseconds 200
+        try { if ($Script:HPS) { $Script:HPS.Dispose() } } catch { }
+        try { if ($Script:HRS) { $Script:HRS.Dispose() } } catch { }
+        try { if ($Script:MainClient) { $Script:MainClient.Dispose() } } catch { }
+        try { if ($Script:MainServer) { $Script:MainServer.Dispose() } } catch { }
+    }
+
+    Context 'Raw PING/PONG protocol (standalone - no module functions)' {
+
+        It 'Should respond PONG:<nonce> to PING:<nonce>' {
+            $Nonce  = [guid]::NewGuid().ToString('N')
+            $Client = [System.IO.Pipes.NamedPipeClientStream]::new(
+                '.', $Script:HTestBase + '.Health',
+                [System.IO.Pipes.PipeDirection]::InOut
+            )
+            try
+            {
+                $Client.Connect(2000)
+                $Writer = [System.IO.StreamWriter]::new($Client)
+                $Reader = [System.IO.StreamReader]::new($Client)
+                $Writer.AutoFlush   = $true
+
+                $Writer.WriteLine("PING:$Nonce")
+                $Response = $Reader.ReadLine()
+                $Response | Should -Be "PONG:$Nonce"
+            }
+            finally { try { $Client.Dispose() } catch { } }
+        }
+
+        It 'PONG response should contain the exact nonce sent (nonce uniqueness check)' {
+            $Nonce1 = [guid]::NewGuid().ToString('N')
+            $Nonce2 = [guid]::NewGuid().ToString('N')
+            $Nonce1 | Should -Not -Be $Nonce2
+            $Client = [System.IO.Pipes.NamedPipeClientStream]::new(
+                '.', $Script:HTestBase + '.Health',
+                [System.IO.Pipes.PipeDirection]::InOut
+            )
+            try
+            {
+                $Client.Connect(2000)
+                $Writer = [System.IO.StreamWriter]::new($Client)
+                $Reader = [System.IO.StreamReader]::new($Client)
+                $Writer.AutoFlush   = $true
+
+                $Writer.WriteLine("PING:$Nonce1")
+                $Response = $Reader.ReadLine()
+                $Response | Should -Be "PONG:$Nonce1"
+                $Response | Should -Not -Be "PONG:$Nonce2"
+            }
+            finally { try { $Client.Dispose() } catch { } }
+        }
+
+        It 'Should handle multiple sequential connections' {
+            1..3 | ForEach-Object {
+                $N = [guid]::NewGuid().ToString('N')
+                $C = [System.IO.Pipes.NamedPipeClientStream]::new(
+                    '.', $Script:HTestBase + '.Health',
+                    [System.IO.Pipes.PipeDirection]::InOut
+                )
+                try
+                {
+                    $C.Connect(2000)
+                    $W = [System.IO.StreamWriter]::new($C)
+                    $R = [System.IO.StreamReader]::new($C)
+                    $W.AutoFlush   = $true
+
+                    $W.WriteLine("PING:$N")
+                    $R.ReadLine() | Should -Be "PONG:$N"
+                }
+                finally { try { $C.Dispose() } catch { } }
+            }
+        }
+    }
+
+    Context 'Test-PipeSession Phase 1 - passive checks' {
+
+        It 'Should return $false for $null PipeInfo' {
+            Test-PipeSession -PipeInfo $null | Should -Be $false
+        }
+
+        It 'Should return $false for empty PSCustomObject (missing Pipe key)' {
+            $Bad = [PSCustomObject]@{}
+            Test-PipeSession -PipeInfo $Bad | Should -Be $false
+        }
+
+        It 'Should return $false when Pipe stream is not connected (never connected)' {
+            $Dead = [System.IO.Pipes.NamedPipeClientStream]::new(
+                '.', 'NP_NeverConn_' + [guid]::NewGuid().ToString('N').Substring(0, 8),
+                [System.IO.Pipes.PipeDirection]::InOut
+            )
+            $Bad = [PSCustomObject]@{
+                Name   = 'NP_NeverConn'
+                Pipe   = $Dead
+                Reader = $null
+                Writer = $null
+            }
+            Test-PipeSession -PipeInfo $Bad | Should -Be $false
+            try { $Dead.Dispose() } catch { }
+        }
+
+        It 'Should return $false when Reader is $null' {
+            $Bad = [PSCustomObject]@{
+                Name   = $Script:HTestBase
+                Pipe   = $Script:MainClient
+                Reader = $null
+                Writer = $Script:MainWriter
+            }
+            Test-PipeSession -PipeInfo $Bad | Should -Be $false
+        }
+
+        It 'Should return $false when Writer is $null' {
+            $Bad = [PSCustomObject]@{
+                Name   = $Script:HTestBase
+                Pipe   = $Script:MainClient
+                Reader = $Script:MainReader
+                Writer = $null
+            }
+            Test-PipeSession -PipeInfo $Bad | Should -Be $false
+        }
+    }
+
+    Context 'Test-PipeSession Phase 2 - active PING/PONG' {
+
+        It 'Should return $true for a connected pipe with health server running' {
+            Test-PipeSession -PipeInfo $Script:FakePipeInfo | Should -Be $true
+        }
+
+        It 'Should return $true on consecutive calls (server accepts multiple connections)' {
+            Test-PipeSession -PipeInfo $Script:FakePipeInfo | Should -Be $true
+            Test-PipeSession -PipeInfo $Script:FakePipeInfo | Should -Be $true
+        }
+
+        It 'Should return $false when health server is absent (wrong pipe name)' {
+            $WrongInfo = [PSCustomObject]@{
+                Name   = 'NP_NoServer_' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+                Pipe   = $Script:MainClient
+                Reader = $Script:MainReader
+                Writer = $Script:MainWriter
+            }
+            Test-PipeSession -PipeInfo $WrongInfo -TimeoutMs 500 | Should -Be $false
+        }
     }
 }

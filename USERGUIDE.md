@@ -1,4 +1,4 @@
-# NamedPipe Module v0.6 - User Guide
+# NamedPipe Module v0.7 - User Guide
 
 <!-- CONTRIBUTOR NOTE: Do NOT use em-dashes in this file. Use a regular hyphen (-) only.
      Em-dashes cause PowerShell parser errors in string literals and may be silently
@@ -46,7 +46,17 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 
 | Feature | Description |
 |---------|-------------|
-| Multi-version safety | `Get-Module -Name NamedPipe \| Sort-Object Version -Descending \| Select-Object -First 1` used in spawned server, ensuring the highest loaded version is used when multiple NamedPipe versions are simultaneously in memory (e.g. profile auto-imports 0.4, consumer module imports 0.6). |
+| Multi-version safety | `Get-Module -Name NamedPipe \| Sort-Object Version -Descending \| Select-Object -First 1` used in spawned server, ensuring the highest loaded version is used when multiple NamedPipe versions are simultaneously in memory (e.g. profile auto-imports 0.4, consumer module imports 0.5). |
+
+### What's New in v0.7
+
+| Feature | Description |
+|---------|-------------|
+| Health pipe channel | A dedicated `.Health` background pipe is started automatically by `Start-PipeServerOrClient` in the server process. It listens on `PipeName.Health` using `MaxAllowedServerInstances` so concurrent health checks can connect without disrupting the main data pipe. |
+| `Test-PipeSession` rewrite | Now performs a two-phase check. Phase 1 (passive): verifies PipeInfo, `Pipe.IsConnected`, Reader, Writer, and `Writer.BaseStream` are all valid. Phase 2 (active): connects to the `.Health` pipe, sends `PING:<nonce>`, and verifies `PONG:<nonce>` is echoed back. A per-call GUID nonce prevents replay attacks. Returns `$false` immediately if Phase 1 fails. |
+| Nonce-based liveness | Phase 2 uses `[guid]::NewGuid().ToString('N')` as a per-call challenge. A squatting process cannot pass the check without relaying the exact nonce value, confirming the original server process is alive. |
+| `ModuleToLoad.Path` | `ModuleToLoad` now accepts an optional `Path` field containing the full path to the consumer module's `.psd1` file. When present, the spawned server imports by path rather than by name+version. This is required when the module lives on a network or OneDrive drive (`L:\`, etc.) that is not in `$PSModulePath` in the elevated spawned process. |
+| Spawn path fix | `Start-PipeServerOrClient` now uses `Get-Module -Name NamedPipe \| Sort-Object Version -Descending \| Select-Object -First 1` to locate its own script file when building the spawned server command line. This replaces the previous `$MyInvocation`-based approach and is robust when multiple NamedPipe versions are simultaneously loaded in the session. |
 
 ## Architecture
 
@@ -88,7 +98,7 @@ The `$Str*` variables (e.g., `$StrInfoDisplay`, `$StrChunkSize`) are string cons
 ```powershell
 # Step 1: Import the module
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.6
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
 
 # Step 2: Capture bound parameters and start session
 $Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
@@ -147,7 +157,14 @@ $Session = Start-PipeSession -MyParameters $Private:MyBoundParameters -AccessLis
 
 ### Test-PipeSession
 
-Non-disruptive health check that verifies the pipe is connected and functional without sending any commands. Checks that PipeInfo, Pipe.IsConnected, Reader, Writer, and Writer.BaseStream are all valid.
+Two-phase health check that confirms the pipe is connected and the server process is alive.
+
+**Phase 1 (passive):** verifies PipeInfo object, `Pipe.IsConnected`, Reader, Writer, and
+`Writer.BaseStream` are all valid. Returns `$false` immediately on any failure - no network I/O.
+
+**Phase 2 (active):** connects to the dedicated `.Health` pipe started automatically by the server,
+sends `PING:<nonce>`, and verifies `PONG:<nonce>` is echoed back. A per-call GUID nonce prevents
+replay attacks. Default timeout is 2000 ms.
 
 ```powershell
 if (Test-PipeSession -PipeInfo $ServerClientParams.$StrPipeInfo)
@@ -167,6 +184,68 @@ Sends an ExitPipe request (if the pipe is still connected) and disposes the Writ
 
 ```powershell
 Stop-PipeSession -SendRequestParams $SendRequestParams -PipeInfo $ServerClientParams.$StrPipeInfo
+```
+
+## Sharing a Session Across Multiple Calls
+
+By default, each function that calls `Start-PipeSession` opens its own server process, does its
+work, and closes the session. This is correct and sufficient for most use cases - no setup needed.
+
+When you want multiple calls to share one server process (one UAC prompt for the whole batch),
+you pre-open a session before calling the functions. The functions detect it via a scope-walk
+and reuse it automatically.
+
+### How the Scope-Walk Works
+
+Consumer modules that support shared sessions (such as VHDTools) implement `New-VHDPipeSession`
+which walks the PowerShell call stack using `Get-Variable -Name 'Session' -Scope N` upward from
+the immediate caller. If it finds a `$Session` variable containing a healthy pipe session at any
+ancestor scope, it returns that session with `IsNew=$false` and the function does not open or
+close the server. If no healthy session is found, a new server is opened with `IsNew=$true` and
+the function closes it in its `Finally` block.
+
+### The `$Script:Session` Requirement
+
+For the scope-walk to find the pre-opened session reliably, the variable **must be declared at
+script scope** using `$Script:Session`, not as a plain local variable `$Session`.
+
+**Why:** `Get-Variable -Scope N` counts scopes numerically from the calling function upward.
+When crossing the boundary from a module function (e.g. `New-VHDDisk` in VHDTools) back into
+a calling `.ps1` script, scope numbering can skip or misalign depending on call depth. A plain
+`$Session` at the script's top level may be in a local scope that the walk misses. `$Script:`
+pins the variable to the script's persistent scope, which is always reachable regardless of
+call depth.
+
+```powershell
+# CORRECT - scope-walk will find this from inside module functions
+$Script:Session = New-VHDPipeSession
+
+New-VHDDisk @Params1    # scope-walk finds $Script:Session - IsNew=$false, no UAC
+New-VHDDisk @Params2    # same
+New-VHDDisk @Params3    # same
+
+Close-VHDPipeSession    # scope-walk finds $Script:Session, closes and nulls it
+
+
+# ALSO CORRECT - no shared session, each call opens and closes its own server
+New-VHDDisk @Params1    # opens server, IsNew=$true, closes when done (one UAC)
+New-VHDDisk @Params2    # opens another server (another UAC)
+```
+
+### Rules
+
+| Caller type | Variable to use | Reason |
+|---|---|---|
+| User `.ps1` script pre-opening a shared session | `$Script:Session` | Must be at script scope for cross-module scope-walk to find it |
+| Module function (`New-VHDDisk`, etc.) | `$Session` (plain) | `$Script:` inside a module function refers to the module's own script scope - wrong place |
+| Self-contained helper that opens and closes its own session | `$Session` (plain) | Never needs to be found by scope-walk |
+
+**Note:** `PSUseDeclaredVarsMoreThanAssignments` will warn on `$Script:Session` in test scripts
+because PSScriptAnalyzer cannot see the scope-walk usage. Suppress it with:
+
+```powershell
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', 'Session',
+    Justification = '$Session is set for scope-walk reuse by called functions')]
 ```
 
 ## Setting Up Your Script
@@ -205,7 +284,7 @@ Param (
 ```powershell
 # 1. Import the module
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.6
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
 
 # 2. Capture bound parameters
 $Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
@@ -537,7 +616,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.6' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.7' }
     )
 }
 ```
@@ -553,6 +632,30 @@ $Session = Start-PipeSession -MyParameters $MyBoundParameters -Options $PipeOpti
 ```
 
 The spawned server imports VHD by name and version, which auto-imports NamedPipe via RequiredModules. All VHD functions are then available on the server side.
+
+### ModuleToLoad.Path (v0.7+) - Network and OneDrive Drives
+
+When the module lives on a network drive or OneDrive sync folder (e.g. `L:\OneDrive\...`), the
+elevated spawned server process may not have that drive mapped in its `$PSModulePath`. Import by
+name silently fails and PowerShell may autoload an older version of the module instead.
+
+**Fix:** include the full `.psd1` path in `ModuleToLoad`. The spawned server prefers path-based
+import when `Path` is present and the file exists, falling back to name+version only if not.
+
+```powershell
+# Resolve the loaded module's full .psd1 path on the client side (where the drive IS mapped)
+# then pass it into ModuleToLoad so the elevated server can import by path.
+$Private:mod = Get-Module -Name 'MyModule' | Where-Object { $_.Version -eq $ModuleVersion } | Select-Object -First 1
+$Private:psd1 = if ($Private:mod) { Join-Path $Private:mod.ModuleBase ($Private:mod.Name + '.psd1') } else { $null }
+$PipeOptions['ModuleToLoad'] = @{
+    Name    = 'MyModule'
+    Version = $ModuleVersion
+    Path    = $Private:psd1      # full path - used by spawned server when PSModulePath lacks the drive
+}
+```
+
+If `Path` is `$null` (module not currently loaded on the client), the server falls back to
+name+version import - same behaviour as v0.6.
 
 ## Complete Example Script
 
@@ -580,7 +683,7 @@ Param (
 
 # Import the module
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.6
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
 
 # Define your actions to execute on the server
 function Invoke-MyActions
@@ -694,7 +797,7 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.6   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.7   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
 
@@ -731,6 +834,19 @@ $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before impor
 ### "Function not found" errors
 **Cause**: Attempting to call an internal function that is no longer exported in v0.4.
 **Solution**: Use `Start-PipeSession` instead of calling `Start-PipeServerOrClient` directly. See the FunctionExportTable section for which functions are public.
+
+### Multiple UAC prompts when a shared session is expected
+**Cause**: The pre-opened `$Session` variable is not being found by the scope-walk, so each
+function call opens a new server instead of reusing the existing one.
+**Solution**: Change `$Session = New-VHDPipeSession` to `$Script:Session = New-VHDPipeSession`
+in the calling script. See the "Sharing a Session Across Multiple Calls" section.
+
+### "Module not found" or wrong module version in the elevated server
+**Cause**: The consumer module is installed on a network or OneDrive drive (e.g. `L:\`) that
+is not mapped in the elevated spawned process's `$PSModulePath`. Import by name silently fails
+and PowerShell may autoload an older version of the same module.
+**Solution**: Pass the full `.psd1` path in `ModuleToLoad.Path` (resolved on the client side
+where the drive is mapped). See the "ModuleToLoad.Path" section under Consumer Module Import.
 
 ### Migrating from v0.2
 **Problem**: Scripts written for v0.2 call `Start-PipeServerOrClient` directly.

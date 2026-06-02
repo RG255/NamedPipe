@@ -8,7 +8,7 @@
 
 @{
 	RootModule        = 'InitialiseModule.psm1'
-	ModuleVersion     = '0.6'
+	ModuleVersion     = '0.7'
 	GUID              = 'cf56c0a7-f3d1-4f28-92a3-065c668073ea'
 	Author            = 'RayG'
 	CompanyName       = 'RayG'
