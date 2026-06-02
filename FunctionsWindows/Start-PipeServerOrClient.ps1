@@ -188,17 +188,39 @@ Function Start-PipeServerOrClient
 						(Set-PipeSecurity -AccessIdentifier $ServerClientParams.AccessIdentifier)
 					)
 				}
-				$timeout = [timespan]::FromSeconds($ServerClientParams.$StrServerWaitTimeout)
-				$source = [Threading.CancellationTokenSource]::new($timeout)
-				$conn = $ServerClientParams.$StrPipeInfo.$StrPipe.WaitForConnectionAsync($source.token)
-				do
+				$Private:ExitRequested = $false
+				While (-not $Private:ExitRequested)
 				{
-					# some other stuff here while waiting for connection
-					Start-Sleep -Milliseconds 500
-				}
-				until ($conn.IsCompleted)
-				$ServerClientParams.$StrPipeInfo.$StrReader = [IO.StreamReader]::new($ServerClientParams.$StrPipeInfo.$StrPipe)
-				$ServerClientParams.$StrPipeInfo.$StrWriter = [IO.StreamWriter]::new($ServerClientParams.$StrPipeInfo.$StrPipe)
+					$timeout = [timespan]::FromSeconds($ServerClientParams.$StrServerWaitTimeout)
+					$source = [Threading.CancellationTokenSource]::new($timeout)
+					$conn = $ServerClientParams.$StrPipeInfo.$StrPipe.WaitForConnectionAsync($source.token)
+					do
+					{
+						# some other stuff here while waiting for connection
+						Start-Sleep -Milliseconds 500
+					}
+					until ($conn.IsCompleted)
+					If ($conn.IsCanceled -or $conn.IsFaulted -or -not $ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected)
+					{
+						# Timed out or faulted - no new client arrived, stop re-listening
+						$Private:ExitRequested = $true
+						break
+					}
+					# leaveOpen=$true prevents Dispose() from closing the underlying NamedPipeServerStream
+					# so Disconnect()+WaitForConnectionAsync() remain usable for re-listen cycles
+					$ServerClientParams.$StrPipeInfo.$StrReader = [IO.StreamReader]::new(
+						$ServerClientParams.$StrPipeInfo.$StrPipe,
+						([System.Text.UTF8Encoding]::new($false)),
+						$false,
+						1024,
+						$true
+					)
+				$ServerClientParams.$StrPipeInfo.$StrWriter = [IO.StreamWriter]::new(
+					$ServerClientParams.$StrPipeInfo.$StrPipe,
+					([System.Text.UTF8Encoding]::new($false)),
+					1024,
+					$true
+				)
 				$ServerClientParams.$StrPipeInfo.$StrWriter.AutoFlush = $True
 				# Copy InfoDisplay, ChunkSize, Depth to PipeInfo so Send-Data/Receive-Data can access them
 				$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
@@ -383,7 +405,13 @@ Function Start-PipeServerOrClient
 						{
 							If ($ServerClientParams.$StrInfoDisplay -band 4)
 							{Write-Host 'DEBUG SERVER: Entering main loop, calling Receive-Data...' -ForegroundColor Magenta}
-							$DataObject = Receive-Data -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+							$DataObject = Receive-Data -PipeInfo $ServerClientParams.$StrPipeInfo
+							# Stamp ServerPID on the received request so Send-Data's branch
+							# selector (ServerPID -eq $PID) correctly routes the response
+							# through the server path (write and return). Normally the client
+							# sets ServerPID via Start-PipeSession, but env-var hand-off clients
+							# (e.g. VHDTools terminal reconnect) do not know the server PID.
+							$DataObject.$StrServerPID = $PID
 							If ($ServerClientParams.$StrInfoDisplay -band 4)
 							{Write-Host "DEBUG SERVER: Receive-Data returned, Type = $($DataObject.$StrType)" -ForegroundColor Green}
 							Switch ($DataObject.$StrType)
@@ -444,21 +472,61 @@ Function Start-PipeServerOrClient
 									catch
 									{$DataObject.$StrError = NamedPipe\Get-MyErrors -Return}
 								}
+								$StrDisconnect
+								{
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host 'DEBUG SERVER: Processing Disconnect request - will re-listen' -ForegroundColor Magenta}
+									$DataObject.$StrRequest = $DataObject.$StrType
+									$DataObject.$StrResult  = 'Server will re-listen'
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host 'DEBUG SERVER: Disconnect acknowledged' -ForegroundColor Green}
+								}
 							}
 						}
 						catch
 						{
 							Write-Host "DEBUG SERVER: Exception in main loop: $_" -ForegroundColor Red
-							$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+							If ($DataObject) { $DataObject.$StrError = NamedPipe\Get-MyErrors -Return }
 						}
 						If ($ServerClientParams.$StrInfoDisplay -band 4)
 						{Write-Host 'DEBUG SERVER: About to Send-Data response back to client' -ForegroundColor Magenta}
-						Send-Data -DataObject $DataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+						try
+						{
+							Send-Data -DataObject $DataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+						}
+						catch
+						{
+							# Client disconnected before we could respond - IsConnected check below exits the loop
+							$null = $_
+						}
 						If ($ServerClientParams.$StrInfoDisplay -band 4)
 						{Write-Host 'DEBUG SERVER: Send-Data completed, looping back' -ForegroundColor Green}
 					}
-					while ($ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected -and $DataObject.$StrType -inotmatch $StrExitPipe)
-					If ($ServerClientParams.Wait)
+					while ($ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected -and
+						   $DataObject.$StrType -inotmatch $StrExitPipe -and
+						   $DataObject.$StrType -inotmatch $StrDisconnect)
+					If ($DataObject.$StrType -imatch $StrExitPipe)
+					{
+						# Client sent ExitPipe - server truly exits
+						$Private:ExitRequested = $true
+					}
+					Else
+					{
+						# Client sent Disconnect or closed unexpectedly - stop health pipe first
+						# so the next iteration starts with only one health runspace (not two).
+						Stop-HealthPipe -HealthPipeName $HealthPipeName -HealthRunSpace $HealthRunSpace -HealthPS $HealthPS -healthCts $HealthCts
+						$HealthRunspace = $null
+						$HealthPS       = $null
+						$HealthCts      = $null
+						# Clean up streams and put the server pipe back to listening state
+						try { $ServerClientParams.$StrPipeInfo.$StrReader.Dispose() } catch { $null = $_ }
+						try { $ServerClientParams.$StrPipeInfo.$StrWriter.Dispose() } catch { $null = $_ }
+						$ServerClientParams.$StrPipeInfo.$StrReader = $null
+						$ServerClientParams.$StrPipeInfo.$StrWriter = $null
+						try { $ServerClientParams.$StrPipeInfo.$StrPipe.Disconnect() } catch { $null = $_ }
+					}
+				} # End re-listen While
+				If ($ServerClientParams.Wait)
 					{
 						Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set
 						Pause
@@ -466,13 +534,20 @@ Function Start-PipeServerOrClient
 				}
 				Catch
 				{
-					Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set
-					NamedPipe\Get-MyErrors -Return
+					If ($DataObject.$StrServerPID) { Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set }
+					$Private:CatchMsg = "Exception: $($_.Exception.Message)`n$($_.ScriptStackTrace)`n$(NamedPipe\Get-MyErrors -Return)"
+					$Private:CatchMsg | Out-File -FilePath 'C:\Temp\pipe-server-error.txt' -Encoding UTF8
+					Write-Host $Private:CatchMsg -ForegroundColor Red
+					Write-Host 'Error saved to C:\Temp\pipe-server-error.txt' -ForegroundColor Yellow
 					Pause
 				}
 				Finally
 				{
-					Stop-HealthPipe -HealthPipeName $HealthPipeName -HealthRunSpace $HealthRunSpace -HealthPS $HealthPS -healthCts $HealthCts
+					# Only stop if not already stopped in the re-listen Else branch
+					If ($HealthRunspace)
+					{
+						Stop-HealthPipe -HealthPipeName $HealthPipeName -HealthRunSpace $HealthRunSpace -HealthPS $HealthPS -healthCts $HealthCts
+					}
 					# Ensure proper cleanup of resources
 					if ($ServerClientParams.$StrPipeInfo.$StrReader)
 					{

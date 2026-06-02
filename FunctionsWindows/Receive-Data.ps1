@@ -53,8 +53,36 @@ Function Receive-Data
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
 			Write-Host "DEBUG Receive-Data: ReadLine returned, length=$($line.Length)" -ForegroundColor Cyan
-			Write-Host "DEBUG Receive-Data: About to deserialize" -ForegroundColor Cyan
 		}
+		# ReadLine returns $null when the peer closes the pipe cleanly (no bytes left).
+		# Short-circuit here with a Disconnect marker so the server's re-listen branch
+		# handles it. Without this, the catch block below would emit a stale $DataObject
+		# from dynamic scope (the previous request), causing the server main loop to
+		# treat it as a new ScriptBlock request and write to the broken pipe.
+		if ($null -eq $line)
+		{
+			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
+			{ Write-Host 'DEBUG Receive-Data: Peer closed pipe (ReadLine=$null) - returning Disconnect marker' -ForegroundColor Yellow }
+			return [Ordered]@{
+				$StrError             = $Null
+				$StrFromServerOrClient = $Null
+				$StrClientPID         = $Null
+				$StrClientUser        = $Null
+				$StrServerPID         = $Null
+				$StrServerUser        = $Null
+				$StrType              = $StrDisconnect
+				$StrResult            = $Null
+				$StrRequest           = $Null
+				$StrProgressInfo      = $Null
+				$StrParameters        = $Null
+				$StrLastRequest       = $Null
+				$StrLastParameters    = $Null
+				$StrData              = $Null
+				$StrLastData          = $Null
+			}
+		}
+		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
+		{ Write-Host "DEBUG Receive-Data: About to deserialize" -ForegroundColor Cyan }
 		$received = ConvertFrom-Serial -Text $line
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{

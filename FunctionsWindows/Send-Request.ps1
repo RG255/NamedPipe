@@ -66,11 +66,12 @@
 		[Allowemptystring()]
 		[String]$Request,
 		[Parameter(Mandatory,HelpMessage = 'Please supply the Type For this command')]
-		[Validateset('Security', 'ScriptBlock', 'ExitPipe')]
+		[Validateset('Security', 'ScriptBlock', 'ExitPipe', 'Disconnect')]
 		[Validatescript({
-					$_ -imatch $StrSecurity -or 
-					$_ -imatch $StrScriptBlock -or 
-					$_ -imatch $StrExitPipe
+					$_ -imatch $StrSecurity -or
+					$_ -imatch $StrScriptBlock -or
+					$_ -imatch $StrExitPipe -or
+					$_ -imatch $StrDisconnect
 		})]
 		[String]$Type,
 		[Parameter(Mandatory,HelpMessage = 'Please supply the PipeInfo Object')]

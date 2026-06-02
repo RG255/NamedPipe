@@ -89,6 +89,28 @@ Function Get-SBResult
 		}
 		$ErrorActionPreference = 'Stop'
 		$DataObject.$StrResult = $Private:SB.InvokeReturnAsIs()
+
+		# Defensive: raw CIM/WMI objects do not round-trip through PSSerializer reliably
+		# and can hang Send-Data indefinitely. Surface as a clear error instead of a hang
+		# so the server function author sees what to fix (wrap return in [PSCustomObject]).
+		If ($null -ne $DataObject.$StrResult)
+		{
+			$Private:Probe = If ($DataObject.$StrResult -is [System.Collections.IEnumerable] -and $DataObject.$StrResult -isnot [String])
+			{ @($DataObject.$StrResult) | Select-Object -First 1 }
+			Else { $DataObject.$StrResult }
+			If ($null -ne $Private:Probe)
+			{
+				$Private:TypeName = $Private:Probe.GetType().FullName
+				If ($Private:TypeName -like 'Microsoft.Management.Infrastructure.CimInstance*' -or
+					$Private:TypeName -like 'System.Management.ManagementObject*' -or
+					$Private:TypeName -like 'System.Management.ManagementBaseObject*' -or
+					$Private:TypeName -like 'Microsoft.PowerShell.Cmdletization.GeneratedTypes.*')
+				{
+					$DataObject.$StrResult = $null
+					$DataObject.$StrError = ('Server function returned a non-serializable type ({0}). Wrap it in [PSCustomObject] with typed primitive properties before returning, or PSSerializer will hang or truncate the result.' -f $Private:TypeName)
+				}
+			}
+		}
 	}
 	Catch
 	{

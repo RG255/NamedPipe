@@ -39,7 +39,12 @@
 		})]
 		[string]$Type
 	)
-	$Private:dataObject = Set-ObjectParams -MyParameters $PSCmdlet.MyInvocation.BoundParameters -Dataset DataObject	
+	$Private:dataObject = Set-ObjectParams -MyParameters $PSCmdlet.MyInvocation.BoundParameters -Dataset DataObject
+	# Must tag this as a server-originated DataObject. Send-Data uses ServerPID -eq $PID
+	# to decide whether to wait for a response after writing. Without this, Send-Data
+	# treats the progress message as a client send and calls Receive-Data, deadlocking
+	# the server against the client (client is also blocked reading for the real result).
+	$Private:dataObject.$StrServerPID  = $PID
 	$Private:dataObject.$StrProgressInfo = $String
 	$Private:dataObject.$StrType = $Type
 	Send-Data -DataObject $Private:dataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop

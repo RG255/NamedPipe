@@ -28,7 +28,7 @@ Param (
 )
 
 Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.8
 function Invoke-RequiredActions
 {
 	<#
@@ -131,8 +131,45 @@ function Invoke-RequiredActions
 	Send-Request @SendRequestParams
 	$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId {0} -State {1} -Set -Passthru' -f $SendRequestParams.$StrDataObject.$StrServerPID, $StrMinimize|
 	Send-Request @SendRequestParams
-	$WindowInfo = $SendRequestParams.$StrDataObject.$StrResult
-	
+	$null = $SendRequestParams.$StrDataObject.$StrResult
+
+	# ===== RE-LISTEN TEST =====
+	# Send a clean Disconnect request. The server handles $StrDisconnect in the Switch,
+	# sends back an OK response, then disposes Reader/Writer, calls Disconnect(), and
+	# loops back to WaitForConnection - no exceptions involved.
+	$Private:RlPipeName = $ServerClientParams.$StrPipeInfo.$StrName
+	Write-Host ("`n[ReListen] Sending Disconnect request - server should re-listen on [{0}]..." -f $Private:RlPipeName) -ForegroundColor Cyan
+	$SendRequestParams.$StrType = $StrDisconnect
+	$SendRequestParams.$StrDataObject = '' | Send-Request @SendRequestParams
+	$SendRequestParams.$StrType = $StrScriptBlock
+	try { $ServerClientParams.$StrPipeInfo.$StrWriter.Dispose() } catch { $null = $_ }
+	try { $ServerClientParams.$StrPipeInfo.$StrReader.Dispose() } catch { $null = $_ }
+	Start-Sleep -Milliseconds 300   # give server time to complete Disconnect() and call WaitForConnection
+
+	Write-Host '[ReListen] Reconnecting to the same pipe server...' -ForegroundColor Cyan
+	$Private:RlScp    = Set-ObjectParams -Client -Dataset $StrServerClientParams -MyParameters $ServerClientParams
+	$Private:RlModule = Get-Module -Name NamedPipe | Where-Object { $_.Version -eq '0.8' } | Select-Object -First 1
+	$Private:RlScp.$StrPipeInfo = $Private:RlModule.Invoke(
+		{ param($d) Start-PipeServerOrClient -SerialData $d },
+		(ConvertTo-Serial -Object $Private:RlScp)
+	)
+
+	If ($Private:RlScp.$StrPipeInfo.$StrError -or -not $Private:RlScp.$StrPipeInfo.$StrPipe.IsConnected)
+	{
+		Write-Host '[ReListen] FAILED - server did not re-listen or connection refused.' -ForegroundColor Red
+	}
+	Else
+	{
+		# Update session refs: hashtable mutation propagates $SendRequestParams to caller scope;
+		# use Set-Variable for $ServerClientParams so health check and Stop-PipeSession use new connection.
+		Set-Variable -Name ServerClientParams -Value $Private:RlScp -Scope 1
+		$SendRequestParams.$StrPipeInfo = $Private:RlScp.$StrPipeInfo
+		$SendRequestParams.$StrDataObject = 'Write-Host -Object "Re-listen reconnect confirmed" -ForegroundColor Cyan' |
+		Send-Request @SendRequestParams
+		Write-Host '[ReListen] PASSED - server re-listened and accepted the new connection.' -ForegroundColor Green
+	}
+	# ===== END RE-LISTEN TEST =====
+
 	$SendRequestParams.$StrDataObject = 'Write-Host -Object "{0}" -Foreground red' -f 'Hello World'|
 	Send-Request @SendRequestParams
 	

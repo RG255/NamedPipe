@@ -92,6 +92,12 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Used in NamedPipe module'
 		}
+		StrDisconnect         = @{
+			Value  = 'Disconnect'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = 'Used in NamedPipe module - client sends to disconnect cleanly while server re-listens'
+		}
 		StrServer             = @{
 			Value  = 'Server'
 			Scope  = $VSScript

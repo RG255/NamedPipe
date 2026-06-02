@@ -8,8 +8,8 @@
 
 @{
 	RootModule        = 'InitialiseModule.psm1'
-	ModuleVersion     = '0.7'
-	GUID              = 'cf56c0a7-f3d1-4f28-92a3-065c668073ea'
+	ModuleVersion     = '0.8'
+	GUID              = 'b2a14d3e-8c7f-4e91-b035-7d2f9a1c4e56'
 	Author            = 'RayG'
 	CompanyName       = 'RayG'
 	Copyright         = '(c) 2024-2026 RayG. All rights reserved.'

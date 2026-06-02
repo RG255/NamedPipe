@@ -1,5 +1,15 @@
 # NamedPipe Changelog
 
+## Version 0.8 - 2026-04-14
+
+### Changes
+
+- Branched from 0.7 as stable baseline before server re-listen implementation.
+- New GUID assigned (0.8 is a separate installable module version).
+- Pending: server re-listen support (outer loop in Start-PipeServerOrClient.ps1 so server
+  waits for a new client after the current client disconnects, rather than exiting).
+  Required for VHDTools pipe session hand-off between GUI and terminal windows.
+
 ## Version 0.9 - 2026-02-01
 
 ### Bug Fixes
