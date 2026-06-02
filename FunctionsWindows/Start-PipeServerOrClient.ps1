@@ -130,7 +130,8 @@ Function Start-PipeServerOrClient
 			If (-not $Administrator -and $ServerClientParams.AdminRequired)
 			{$ProcessVerb = 'RunAs'}
 			$ServerClientParams.$StrAdminRequired = $False
-			$SB = [scriptblock]::Create(('{0} -spawned -SerialData {1}' -f ((Get-Command -Name $MyInvocation.InvocationName).ScriptBlock.File), (ConvertTo-Serial -Object $ServerClientParams)))
+			$Private:npModule = Get-Module -Name NamedPipe | Sort-Object -Property Version -Descending | Select-Object -First 1
+			$SB = [scriptblock]::Create(('{0} -spawned -SerialData {1}' -f (Join-Path $Private:npModule.ModuleBase 'FunctionsWindows\Start-PipeServerOrClient.ps1'), (ConvertTo-Serial -Object $ServerClientParams)))
 			$ProcessInfo = @{
 				FilePath     = $Executable
 				Passthru     = $True
