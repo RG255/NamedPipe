@@ -74,6 +74,7 @@ Function Receive-Data
 				$StrResult            = $Null
 				$StrRequest           = $Null
 				$StrProgressInfo      = $Null
+				$StrQuery             = $Null
 				$StrParameters        = $Null
 				$StrLastRequest       = $Null
 				$StrLastParameters    = $Null

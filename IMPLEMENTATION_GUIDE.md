@@ -48,8 +48,37 @@ $DataObject = @{
     ClientUser        # Username running client
     FromServerOrClient # Direction indicator
     ProgressInfo      # Progress reporting data
+    Query             # RESERVED - server->client needs-input/question payload (null in normal flow)
 }
 ```
+
+### Reserved: Query field (server->client "needs-input" convention)
+
+**Status:** the `Query` field exists on the DataObject (reserved, always `$null` today) but has **no runtime behaviour yet**. It was added now so the eventual feature is an additive *consumer convention* rather than a protocol/shape change at that time (the DataObject shape is defined centrally in `Set-ObjectParams`, so reserving the slot keeps every DataObject uniform).
+
+**Problem it will solve:** today the server returns only success (`Result`) or failure (`Error`). There is no first-class way for the server to say "I need the user to answer something before I can continue" - e.g. a disambiguation (two disks match X - which one?).
+
+**Chosen approach - return-and-re-invoke (NOT a mid-execution channel):** when a server-side action reaches a decision it can resolve *before or between* steps, it returns normally with a structured payload in `Query`, e.g.:
+```powershell
+$DataObject.Query = @{ Id = 'disk-pick'; Kind = 'Choice'
+    Prompt = 'Two disks match X - which?'; Choices = @('Disk2','Disk3'); Default = 'Disk2' }
+```
+The client, after `Send-Request`, checks `if ($DataObject.Query) { ... }`, resolves an answer, and **re-invokes the same action** with the answer added to `Parameters`. The server never blocks waiting on the client, so the deadlock/hang risk that `Send-ProgressInfo` was deliberately designed to avoid never arises.
+
+**Payload may also carry a scriptblock (as text).** Like `Request`, the `Query` payload is just data and can include scriptblock *text* the client executes - e.g. a client-side validator or a custom answer resolver:
+```powershell
+$DataObject.Query = @{ Id = 'count'; Kind = 'Text'; Prompt = 'How many?'
+    Validate = '{ param($a) ($a -as [int]) -in 2..5 }' }   # text, [ScriptBlock]::Create on the client, same as Request
+```
+Trust note: this is the **server handing the client code to run** - the reverse of the normal client->server flow. In the usual model (the client spawned the elevated server) that is acceptable, but treat it deliberately: the client should only execute `Query` scriptblocks from a server it started.
+
+**Why a dedicated field, not the `Error` string:** overloading `Error` would make every existing `if ($DataObject.Error)` site treat a *question* as a *failure* (rollback/abort), and pattern-matching human-readable prose is brittle. A distinct field keeps "failed" and "needs input" cleanly separate.
+
+**Client-side answer resolution (when built):** programmatic handler first -> timed interactive prompt (console-guarded, like the DnsTools root-hints prompt: `[Console]::KeyAvailable` throws in the VS Code/PSES console, so fall back to a notice) -> default on timeout / non-interactive. Add a max-rounds guard so a misbehaving server cannot loop the client forever.
+
+**Boundary - what this does NOT cover:** a question that arises *deep inside a single, non-resumable* server operation (re-invoking would re-run the whole thing). Only that narrow case would justify a true mid-execution question channel (server sends a question, then blocks on a bounded/timeout read for the answer). Defer that until a concrete need appears.
+
+**When implementing, also update:** `Send-Data` role-based field clearing must keep `Query` on a server->client send and clear it on a client send; `Send-Request`'s receive loop gains a `Query` branch; add a small client `Resolve-PipeQuery` helper. None of that exists yet - this is only the reserved slot.
 
 ### Object Structure - ServerClientParams
 ```powershell

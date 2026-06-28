@@ -170,6 +170,12 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Used in NamedPipe module'
 		}
+		StrQuery              = @{
+			Value  = 'Query'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = 'RESERVED - server->client needs-input/question payload; null in normal flow. See IMPLEMENTATION_GUIDE.md (Query field). No runtime behaviour yet.'
+		}
 		StrAction             = @{
 			Value  = 'Action'
 			Scope  = $VSScript

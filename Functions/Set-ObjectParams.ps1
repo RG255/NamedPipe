@@ -316,6 +316,7 @@ Function Set-ObjectParams
 				$StrResult = $Null
 				$StrRequest = $Null
 				$StrProgressInfo = $Null
+				$StrQuery = $Null   # RESERVED - server->client needs-input payload (see IMPLEMENTATION_GUIDE.md). Null in normal flow.
 				$StrParameters = $Null
 				$StrLastRequest = $Null
 				$StrLastParameters = $Null
