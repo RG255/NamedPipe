@@ -135,15 +135,24 @@ Function Start-PipeServerOrClient
 			If (-not $Administrator -and $ServerClientParams.AdminRequired)
 			{$ProcessVerb = 'RunAs'}
 			$ServerClientParams.$StrAdminRequired = $False
-			$Private:npModule = Get-Module -Name NamedPipe | Sort-Object -Property Version -Descending | Select-Object -First 1
-			$SB = [scriptblock]::Create(('{0} -spawned -SerialData {1}' -f (Join-Path $Private:npModule.ModuleBase 'FunctionsWindows\Start-PipeServerOrClient.ps1'), (ConvertTo-Serial -Object $ServerClientParams)))
+			$Private:npModule     = Get-Module -Name NamedPipe | Sort-Object -Property Version -Descending | Select-Object -First 1
+			$Private:ServerScript = Join-Path $Private:npModule.ModuleBase 'FunctionsWindows\Start-PipeServerOrClient.ps1'
+			# Launch the server with -File and the script path DOUBLE-QUOTED inside a single argument
+			# string, so a module path containing a space (e.g. under C:\Program Files\...) is passed
+			# intact. Notes on why other forms fail here:
+			#   * '-Command &{ <path> ... }' : the quotes are consumed when -Command's args are rejoined,
+			#     leaving a bare spaced path -> the spawned process ran 'C:\Program' and died early.
+			#   * an ARRAY -ArgumentList : Windows PowerShell 5.1 Start-Process -Verb (ShellExecute) does
+			#     not quote array elements, it just space-joins them, so the path splits again.
+			# With -File the path is a discrete parameter value, so the double quotes survive.
+			$Private:ServerArgs = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Spawned -SerialData {1}' -f $Private:ServerScript, (ConvertTo-Serial -Object $ServerClientParams)
 			$ProcessInfo = @{
 				FilePath     = $Executable
 				Passthru     = $True
 				WindowStyle  = $ServerClientParams.$StrWindowStyle
 				wait         = $False
 				Verb         = $ProcessVerb
-				Argumentlist = ('-Executionpolicy bypass -Command &{{{0}}}' -f $SB)
+				Argumentlist = $Private:ServerArgs
 			}
 			If ($ServerClientParams.$Strverbose)
 			{Show-VerboseData -Object $ProcessInfo -Display -Title 'ProcessInfo Starting the Server'}	
