@@ -30,7 +30,7 @@ Function Start-PipeTest
 	)
 
 	Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-	Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
+	Import-Module -Name NamedPipe -Force -RequiredVersion 0.8
 	function Invoke-RequiredActions
 	{
 		<#

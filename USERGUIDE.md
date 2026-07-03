@@ -98,7 +98,7 @@ The `$Str*` variables (e.g., `$StrInfoDisplay`, `$StrChunkSize`) are string cons
 ```powershell
 # Step 1: Import the module
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.8
 
 # Step 2: Capture bound parameters and start session
 $Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
@@ -284,7 +284,7 @@ Param (
 ```powershell
 # 1. Import the module
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.8
 
 # 2. Capture bound parameters
 $Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
@@ -616,7 +616,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.7' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.8' }
     )
 }
 ```
@@ -683,7 +683,7 @@ Param (
 
 # Import the module
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.7
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.8
 
 # Define your actions to execute on the server
 function Invoke-MyActions
@@ -797,7 +797,7 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.7   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.8   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
 

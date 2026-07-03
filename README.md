@@ -30,7 +30,7 @@ Documents\WindowsPowerShell\Modules\NamedPipe\0.7\
 Then import:
 
 ```powershell
-Import-Module NamedPipe -RequiredVersion 0.7
+Import-Module NamedPipe -RequiredVersion 0.8
 ```
 
 ## Documentation
