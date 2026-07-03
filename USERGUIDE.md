@@ -633,11 +633,14 @@ $Session = Start-PipeSession -MyParameters $MyBoundParameters -Options $PipeOpti
 
 The spawned server imports VHD by name and version, which auto-imports NamedPipe via RequiredModules. All VHD functions are then available on the server side.
 
-### ModuleToLoad.Path (v0.7+) - Network and OneDrive Drives
+### ModuleToLoad.Path (v0.7+) - modules outside the server's PSModulePath
 
-When the module lives on a network drive or OneDrive sync folder (e.g. `L:\OneDrive\...`), the
-elevated spawned server process may not have that drive mapped in its `$PSModulePath`. Import by
-name silently fails and PowerShell may autoload an older version of the module instead.
+When the module lives somewhere the elevated spawned server process does not have on its
+`$PSModulePath` - e.g. a mapped network drive, or a per-user synced folder (OneDrive / roaming
+profile) - import by name silently fails and PowerShell may autoload an older version of the module
+instead. (Modules deployed to the AllUsers Program Files paths are already on the default
+`$PSModulePath`, so they do not hit this; it applies only when a consumer keeps its module on such
+a drive.)
 
 **Fix:** include the full `.psd1` path in `ModuleToLoad`. The spawned server prefers path-based
 import when `Path` is present and the file exists, falling back to name+version only if not.
