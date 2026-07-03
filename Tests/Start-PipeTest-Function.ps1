@@ -195,7 +195,6 @@ Function Start-PipeTest
 
 	#$BPList = Set-Breakpoints -BPObject $BPList
 	#$BPList = Remove-Breakpoints -BPObject $BPList
-	#Set-psbreakpoint -line 70 -script 'L:\OneDrive\Documents\WindowsPowerShell\Modules\NamedPipe\0.2\FunctionsWindows\Send-data.ps1'
 	$Private:MyOptions = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Private:MyBoundParameters
 	# These options can be set to enable various options but can also be part of a script's parameters at startup
 	#$MyOptions.$StrInfoDisplay = $InfoDisplay # Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug output (combine: 3=1+2, 7=all)

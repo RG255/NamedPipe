@@ -8,7 +8,6 @@ Param (
 )
 If ($Spawned)
 {
-	#Set-PSBreakpoint -line 15 -Script L:\OneDrive\Documents\WindowsPowerShell\Modules\NamedPipe\0.7\FunctionsWindows\Start-PipeServerOrClient.ps1
 	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
 	# Bootstrap: $PSScriptRoot resolves to this script's installed FunctionsWindows\ directory.
 	# Import the owning NamedPipe manifest so ConvertFrom-Serial is available before we
