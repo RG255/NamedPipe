@@ -7,7 +7,8 @@ Function ConvertTo-Parameters
 			.DESCRIPTION
 			Hashtable splatting (@Hash) cannot be used inside dynamically created
 			scriptblocks. This function converts a hashtable into a conventional
-			parameter string that can be embedded in a scriptblock.
+			parameter string that can be embedded in a scriptblock with proper
+			escaping to prevent code injection attacks.
 
 			For example, a hashtable:
 			  @{ Path = 'C:\Temp'; Recurse = $True }
@@ -43,7 +44,7 @@ Function ConvertTo-Parameters
 		[HashTable]$Hash
 	)
 	$Private:y = $(&{$args}@Hash)
-	for ($Private:x = 0; $Private:x -le $Private:y.count; $Private:x ++) 
+	for ($Private:x = 0; $Private:x -le $Private:y.count; $Private:x ++)
 	{
 		Switch -Regex ($Private:y[$Private:x])
 		{'(?i)^(true|false)$'
@@ -56,10 +57,30 @@ Function ConvertTo-Parameters
 				{$Private:y[$Private:x] = "''"}
 				Else
 				{
-					Switch ($Private:y[$Private:x].count -gt [int]1)
+					If ($Private:y[$Private:x] -is [array])
 					{
-						$True
-						{$Private:y[$Private:x] = '{0}' -f ($Private:y[$Private:x] -join ',')}
+						$Private:escaped = @()
+						foreach ($item in $Private:y[$Private:x])
+						{
+							if ($item -is [string])
+							{
+								$esc = $item -replace "'", "''"
+								$Private:escaped += "'$esc'"
+							}
+							else
+							{
+								$Private:escaped += $item
+							}
+						}
+						$Private:y[$Private:x] = $Private:escaped -join ','
+					}
+					else
+					{
+						if ($Private:y[$Private:x] -is [string])
+						{
+							$esc = $Private:y[$Private:x] -replace "'", "''"
+							$Private:y[$Private:x] = "'$esc'"
+						}
 					}
 				}
 			}

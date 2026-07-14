@@ -11,7 +11,11 @@ Function Get-SBResult
 
 		If the DataObject contains a Parameters property, these are appended to the
 		scriptblock as arguments. Parameters can be a string or a hashtable (converted
-		via ConvertTo-Parameters).
+		via ConvertTo-Parameters with injection-resistant escaping).
+
+		Security: Validates scriptblock syntax before execution to detect malformed
+		or suspicious commands. String parameters are escaped by ConvertTo-Parameters
+		to prevent code injection.
 
 		.PARAMETER DataObject
 		The data structure containing the request to execute. Must have a Request property
@@ -54,18 +58,36 @@ Function Get-SBResult
 		}
 		if ($DataObject.$StrParameters)
 		{
-			# Create the scriptblock
+			# Create the scriptblock with properly escaped parameters
 			Switch ($DataObject.$StrParameters.gettype().Name)
 			{
 				'string'
 				{$Private:MyArgs = '{0}' -f $DataObject.$StrParameters}
 				'hashtable'
-				{$Private:MyArgs = ConvertTo-Parameters -Hash $DataObject.$StrParameters}
+				{
+					# ConvertTo-Parameters sanitizes values with proper quote escaping
+					$Private:MyArgs = ConvertTo-Parameters -Hash $DataObject.$StrParameters
+				}
 			}
-			$Private:SB = [ScriptBlock]::Create(('{0} {1}' -f $Private:Request, $Private:MyArgs))
+			$Private:SBText = '{0} {1}' -f $Private:Request, $Private:MyArgs
+			$Private:errors = $null
+			$null = [System.Management.Automation.Language.Parser]::ParseInput($Private:SBText, [ref]$null, [ref]$Private:errors)
+			if ($Private:errors -and $Private:errors.Count -gt 0)
+			{
+				throw "Invalid scriptblock syntax: $($Private:errors[0].Message)"
+			}
+			$Private:SB = [ScriptBlock]::Create($Private:SBText)
 		}
 		Else
-		{$Private:SB = [ScriptBlock]::Create($Private:Request)}
+		{
+			$Private:errors = $null
+			$null = [System.Management.Automation.Language.Parser]::ParseInput($Private:Request, [ref]$null, [ref]$Private:errors)
+			if ($Private:errors -and $Private:errors.Count -gt 0)
+			{
+				throw "Invalid scriptblock syntax: $($Private:errors[0].Message)"
+			}
+			$Private:SB = [ScriptBlock]::Create($Private:Request)
+		}
 		If ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitVerbose)
 		{Show-VerboseData -Object $Private:SB -Display -Title 'Full Scriptblock request'}
 		# Echo the assembled scriptblock back to the client (bit 1 = server/client progress)

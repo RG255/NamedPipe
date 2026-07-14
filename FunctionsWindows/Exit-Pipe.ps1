@@ -52,17 +52,38 @@
 		'An error was returned from the server process:' | Write-Output
 		$DataObject.Error | Write-Error
 	}
-	If ($DataObject.error -inotmatch 'IOException' -and $DataObject.Error -inotmatch '^Management.Automation.PSSerializer$')
+
+	$Private:IsCriticalError = $false
+	if ($DataObject.Error)
 	{
-		$DataObject.Type = $StrExitPipe
-		$DataObject = Send-Data -DataObject $DataObject -PipeInfo $PipeInfo
-		if ($DataObject.Error)
+		$Private:ErrorStr = $DataObject.Error
+		if ($Private:ErrorStr -match 'IOException|pipe.*closed|broken pipe' -or
+			$Private:ErrorStr -match 'PSSerializer.*error' -or
+			$Private:ErrorStr -match 'could not be deserialized')
 		{
-			'An error was returned from the server Pipe exit request:' | Write-Output
-			$DataObject.Error| Write-Error
+			$Private:IsCriticalError = $true
 		}
-		$DataObject.Result | Write-Output
 	}
-	$PipeInfo.Writer.Close()
+
+	if (-not $Private:IsCriticalError)
+	{
+		try
+		{
+			$DataObject.Type = $StrExitPipe
+			$DataObject = Send-Data -DataObject $DataObject -PipeInfo $PipeInfo
+			if ($DataObject.Error)
+			{
+				'An error was returned from the server Pipe exit request:' | Write-Output
+				$DataObject.Error | Write-Error
+			}
+			$DataObject.Result | Write-Output
+		}
+		catch
+		{
+			Write-Warning "Error during pipe exit: $($_.Exception.Message)"
+		}
+	}
+
+	try { $PipeInfo.Writer.Close() } catch { $null = $_ }
 	Exit
 }

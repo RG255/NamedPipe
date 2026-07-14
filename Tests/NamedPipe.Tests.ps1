@@ -39,9 +39,9 @@ Describe 'Module Import' {
         Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
     }
 
-    It 'Should be version 0.7' {
+    It 'Should be version 0.9' {
         $Module = Get-Module -Name NamedPipe
-        $Module.Version.ToString() | Should -Be '0.7'
+        $Module.Version.ToString() | Should -Be '0.9'
     }
 
     It 'Should have a valid module version' {
@@ -1206,9 +1206,9 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
         $Default.Name | Should -Be 'NamedPipe'
     }
 
-    It 'Should have Version set to 0.7' {
+    It 'Should have Version set to 0.9' {
         $Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-        $Default.Version | Should -Be '0.7'
+        $Default.Version | Should -Be '0.9'
     }
 }
 

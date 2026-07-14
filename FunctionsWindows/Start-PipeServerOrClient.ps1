@@ -258,16 +258,28 @@ Function Start-PipeServerOrClient
 						$StopWriter.WriteLine('STOP')
 						$StopClient.Dispose()
 					}
-					catch { $null = $_ }
+					catch
+					{
+						if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
+						{ Write-Host "DEBUG Stop-HealthPipe: Failed to send STOP: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+					}
 					Start-Sleep -Milliseconds 200
 					if ($HealthCts)
 					{
-						try { $HealthCts.Cancel() } catch { $null = $_ }
+						try { $HealthCts.Cancel() } catch
+						{
+							if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
+							{ Write-Host "DEBUG Stop-HealthPipe: Failed to cancel CTS: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+						}
 						try { $HealthCts.Dispose() } catch { $null = $_ }
 					}
 					if ($HealthPS)
 					{
-						try { $HealthPS.Dispose() } catch { $null = $_ }
+						try { $HealthPS.Dispose() } catch
+						{
+							if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
+							{ Write-Host "DEBUG Stop-HealthPipe: Failed to dispose PowerShell: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+						}
 					}
 					if ($HealthRunspace)
 					{
@@ -543,10 +555,30 @@ Function Start-PipeServerOrClient
 				Catch
 				{
 					If ($DataObject.$StrServerPID) { Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set }
-					$Private:CatchMsg = "Exception: $($_.Exception.Message)`n$($_.ScriptStackTrace)`n$(NamedPipe\Get-MyErrors -Return)"
-					$Private:CatchMsg | Out-File -FilePath 'C:\Temp\pipe-server-error.txt' -Encoding UTF8
-					Write-Host $Private:CatchMsg -ForegroundColor Red
-					Write-Host 'Error saved to C:\Temp\pipe-server-error.txt' -ForegroundColor Yellow
+					$Private:ErrorMsg = $_.Exception.Message
+					$Private:StackTrace = $_.ScriptStackTrace
+					$Private:FullError = NamedPipe\Get-MyErrors -Return
+
+					$Private:RedactedTrace = $Private:StackTrace -replace 'D:\\[^"]*', '<path-redacted>'
+					$Private:RedactedError = $Private:FullError -replace 'D:\\[^"]*', '<path-redacted>'
+
+					$Private:CatchMsg = "Pipe Server Exception`nMessage: $Private:ErrorMsg`nStack: $Private:RedactedTrace`nDetails: $Private:RedactedError"
+
+					try
+					{
+						$Private:LogDir = Join-Path $env:APPDATA 'NamedPipe-Logs'
+						if (-not (Test-Path $Private:LogDir)) { New-Item -ItemType Directory -Path $Private:LogDir -Force | Out-Null }
+						$Private:LogFile = Join-Path $Private:LogDir "server-error-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+						$Private:CatchMsg | Out-File -FilePath $Private:LogFile -Encoding UTF8 -ErrorAction Stop
+						Write-Host "Server error logged to: $Private:LogFile" -ForegroundColor Yellow
+					}
+					catch
+					{
+						Write-Host "Could not write error log: $_" -ForegroundColor DarkYellow
+					}
+
+					Write-Host "Pipe Server crashed: $Private:ErrorMsg" -ForegroundColor Red
+					Write-Host "(Use path-redacted stack trace - check logs for details)" -ForegroundColor DarkGray
 					Pause
 				}
 				Finally

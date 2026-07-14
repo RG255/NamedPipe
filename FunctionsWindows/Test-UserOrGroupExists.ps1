@@ -45,27 +45,37 @@
 	)
 	Process
 	{
-		$ID = $IDList.split(':')
-		If ($ID.count -ne [int]3)
+		$ID = $IDList -split ':'
+		If ($ID.count -lt 1 -or $ID.count -gt 3)
 		{
-			If ($id.count -eq [int]1)
-			{$IDList += ':Allow:ReadWRite'}
-			If ($id.count -eq [int]2)
-			{$IDList += ':ReadWRite'}
-			$ID = $IDList.split(':')
+			throw "Invalid access identifier format: must have 1-3 parts separated by colons, got $($ID.count)"
+		}
+		If ($ID.count -ne 3)
+		{
+			If ($ID.count -eq 1)
+			{$IDList += ':Allow:ReadWrite'}
+			If ($ID.count -eq 2)
+			{$IDList += ':ReadWrite'}
+			$ID = $IDList -split ':'
 		}
 		$IDList | Write-Verbose
 		$ID | Write-Verbose
-		if ($ID[0] -imatch [Regex]::escape('\'))
-		{$IDu = $ID[0].split('\')[1]}
+		if ($ID[0] -like '*\*')
+		{$IDu = $ID[0] -split '\\' | Select-Object -Last 1}
 		else
 		{$IDu = $ID[0]}
+
+		if ([string]::IsNullOrWhiteSpace($IDu))
+		{
+			throw "Identity cannot be empty or whitespace"
+		}
+
 		$ID[0] | Write-Verbose
 		Try
 		{$Null = Get-LocalUser -Name $IDu -ErrorAction Stop}
 		Catch [Microsoft.PowerShell.Commands.UserNotFoundException]
 		{
-			If ($Global:error.count -gt [int]0)
+			If ($Global:error.count -gt 0)
 			{$Global:Error.RemoveAt(0)}
 			Try
 			{$Null = Get-LocalGroup -Name $IDu -ErrorAction Stop}
@@ -77,12 +87,12 @@
 		}
 		If ($ID[2] -inotmatch '^ReadWrite$')
 		{
-			$Msg = 'Invalid mode specified (ReadWrite): [{0}]' -f $ID[2]
+			$Msg = 'Invalid access right specified (must be ReadWrite): [{0}]' -f $ID[2]
 			Throw $Msg
 		}
 		If ($ID[1] -inotmatch '^Allow$|^Deny$')
 		{
-			$Msg = 'Invalid mode specified (Allow or Deny): [{0}]' -f $ID[1]
+			$Msg = 'Invalid control specified (must be Allow or Deny): [{0}]' -f $ID[1]
 			Throw $Msg
 		}
 		$ID -join ':'

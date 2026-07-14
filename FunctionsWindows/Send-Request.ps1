@@ -83,6 +83,18 @@
 	$Private:ProgressInfo = $False
 	$DataObject.$StrType = $Type
 	$DataObject.$StrRequest = $Request
+
+	if ($Type -eq $StrScriptBlock -and $Request)
+	{
+		$Private:errors = $null
+		$null = [System.Management.Automation.Language.Parser]::ParseInput($Request, [ref]$null, [ref]$Private:errors)
+		if ($Private:errors -and $Private:errors.Count -gt 0)
+		{
+			$DataObject.$StrError = "Client-side syntax validation failed: $($Private:errors[0].Message)"
+			return $DataObject
+		}
+	}
+
 	$DataObject = Send-Data -DataObject $DataObject -PipeInfo $PipeInfo
 	do
 	{

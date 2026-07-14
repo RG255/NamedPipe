@@ -8,7 +8,7 @@ Write-Host "StrScriptBlock exists: $(Test-Path Variable:StrScriptBlock)"
 Write-Host "StrType exists: $(Test-Path Variable:StrType)"
 
 # Load the module
-Import-Module NamedPipe -RequiredVersion 0.8
+Import-Module NamedPipe -RequiredVersion 0.9
 
 # Check variables after module load
 Write-Host "`n=== After Module Load ===" -ForegroundColor Yellow

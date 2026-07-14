@@ -28,7 +28,7 @@ Param (
 )
 
 Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.8
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.9
 function Invoke-RequiredActions
 {
 	<#
@@ -148,7 +148,7 @@ function Invoke-RequiredActions
 
 	Write-Host '[ReListen] Reconnecting to the same pipe server...' -ForegroundColor Cyan
 	$Private:RlScp    = Set-ObjectParams -Client -Dataset $StrServerClientParams -MyParameters $ServerClientParams
-	$Private:RlModule = Get-Module -Name NamedPipe | Where-Object { $_.Version -eq '0.8' } | Select-Object -First 1
+	$Private:RlModule = Get-Module -Name NamedPipe | Select-Object -First 1
 	$Private:RlScp.$StrPipeInfo = $Private:RlModule.Invoke(
 		{ param($d) Start-PipeServerOrClient -SerialData $d },
 		(ConvertTo-Serial -Object $Private:RlScp)
