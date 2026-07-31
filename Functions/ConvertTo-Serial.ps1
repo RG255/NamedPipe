@@ -15,7 +15,7 @@ Function ConvertTo-Serial
 		by ConvertFrom-Serial.
 
 		The serialization process:
-		1. Object �' CliXml (PSSerializer)
+		1. Object -> CliXml (PSSerializer)
 		2. Remove CR/LF/Tab and excess spaces
 		3. Wrap in JSON (handles quote escaping)
 		4. Encode as Base64
