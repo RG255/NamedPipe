@@ -858,7 +858,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.8' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.12' }
     )
 }
 ```
