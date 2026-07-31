@@ -559,8 +559,12 @@ Function Start-PipeServerOrClient
 					$Private:StackTrace = $_.ScriptStackTrace
 					$Private:FullError = NamedPipe\Get-MyErrors -Return
 
-					$Private:RedactedTrace = $Private:StackTrace -replace 'D:\\[^"]*', '<path-redacted>'
-					$Private:RedactedError = $Private:FullError -replace 'D:\\[^"]*', '<path-redacted>'
+					# Redact any drive-qualified (C:\...) or UNC (\\server\share\...) path, not just the
+					# author's development drive - a hardcoded 'D:\' silently redacted NOTHING on any other
+					# machine or for anyone using the public repo, leaking usernames via C:\Users\<name>\...
+					$Private:RedactPathPattern = '(?:[A-Za-z]:\\|\\\\)[^"]*'
+					$Private:RedactedTrace = $Private:StackTrace -replace $Private:RedactPathPattern, '<path-redacted>'
+					$Private:RedactedError = $Private:FullError -replace $Private:RedactPathPattern, '<path-redacted>'
 
 					$Private:CatchMsg = "Pipe Server Exception`nMessage: $Private:ErrorMsg`nStack: $Private:RedactedTrace`nDetails: $Private:RedactedError"
 
