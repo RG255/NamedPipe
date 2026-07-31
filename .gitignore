@@ -6,3 +6,14 @@ CreateModuleManifest.ps1
 
 # Per-file edit history archives
 *.history.zip
+
+# Internal planning / design / build docs - LOCAL ONLY, never publish.
+# These map the module's own attack surface and internal build process; publishing
+# them hands a reader a guided tour of what is defended and how.
+PIPE-INJECTION-HARDENING-PLAN.md
+HARDENING-BUILD-LOG.md
+PID-HANDOFF-DESIGN.md
+TESTING_REPORT.md
+TRIMMING-GUIDE.md
+IMPLEMENTATION_GUIDE.md
+SECURITY_FIXES.md
