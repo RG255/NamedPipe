@@ -88,6 +88,24 @@ Function Get-SBResult
 			}
 			$Private:SB = [ScriptBlock]::Create($Private:Request)
 		}
+
+		# --- request policy gate (0.10 injection hardening) ---
+		# When the consumer supplied a RequestPolicy on the session, the request must pass the
+		# default-deny AST allowlist BEFORE it runs. Validate $Private:SB.ToString() - the exact source
+		# that InvokeReturnAsIs will execute (command + escaped params). No policy = unchanged behaviour.
+		# See PIPE-INJECTION-HARDENING-PLAN.md and Test-RequestPolicy.
+		$Private:ReqPolicy = $ServerClientParams.$StrRequestPolicy
+		If ($Private:ReqPolicy)
+		{
+			$Private:PolicyResult = Test-RequestPolicy -Request ($Private:SB.ToString()) -Policy $Private:ReqPolicy
+			If (-not $Private:PolicyResult.Allowed)
+			{
+				$DataObject.$StrError = ('Request blocked by pipe request policy: {0}' -f $Private:PolicyResult.Reason)
+				$ErrorActionPreference = $Private:ErrorActionPreferenceSave
+				Return $DataObject
+			}
+		}
+
 		If ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitVerbose)
 		{Show-VerboseData -Object $Private:SB -Display -Title 'Full Scriptblock request'}
 		# Echo the assembled scriptblock back to the client (bit 1 = server/client progress)

@@ -8,12 +8,12 @@
 
 @{
 	RootModule        = 'InitialiseModule.psm1'
-	ModuleVersion     = '0.9'
+	ModuleVersion     = '0.12'
 	GUID              = 'b2a14d3e-8c7f-4e91-b035-7d2f9a1c4e56'
 	Author            = 'RayG'
 	CompanyName       = 'RayG'
 	Copyright         = '(c) 2024-2026 RayG. All rights reserved.'
-	Description       = 'Creates a named pipe server and client with chunked data transfer support for large objects. v0.9: Security fixes for code injection vulnerabilities in parameter handling and access control validation.'
+	Description       = 'Creates a named pipe server and client with chunked data transfer support for large objects. v0.12: pipe-injection hardening (default-deny AST request allowlist, medium-integrity pipe label, capability-nonce client auth, connect-deadline auto-teardown) plus leak-proof PID-verified GUI-to-terminal hand-off.'
 	PowerShellVersion = '5.0'
 	RequiredModules   = @(
 		@{
@@ -25,15 +25,14 @@
 	# (no manual Import-Module). This is the UNION of all platforms' public functions;
 	# the psm1 loader only dot-sources the current OS's files and Export-ModuleMember's
 	# what exists, so the effective exports are manifest INTERSECT runtime = the correct
-	# per-OS subset (Windows-only pipe/Set-Window commands simply don't materialise on
+	# per-OS subset (Windows-only pipe/file commands simply don't materialise on
 	# Linux/macOS). Keep in sync with the runtime export set (Tests assert this).
 	FunctionsToExport = @(
 		'Assert-File', 'Assert-Folder', 'ConvertFrom-Serial', 'ConvertTo-Parameters',
-		'ConvertTo-Serial', 'Exit-Pipe', 'Format-MyTextLine', 'Get-ChildWindowHandles',
-		'Get-ChunkBufferStatus', 'Get-MyErrors', 'Get-ProcessIdFromWindowHandle', 'Get-WindowHandleByTitle',
-		'Get-WindowName', 'Initialize-BPList', 'Remove-Breakpoints', 'Send-ProgressInfo',
-		'Send-Request', 'Set-Breakpoints', 'Set-ObjectParams', 'Set-Window',
-		'Show-VerboseData', 'Start-PipeSession', 'Stop-PipeSession', 'Test-PipeSession',
+		'ConvertTo-Serial', 'Exit-Pipe', 'Format-MyTextLine', 'Get-ChunkBufferStatus',
+		'Get-MyErrors', 'Get-PipeServerLog', 'Initialize-BPList', 'Register-PipeEventSource',
+		'Remove-Breakpoints', 'Send-ProgressInfo', 'Send-Request', 'Set-Breakpoints', 'Set-ObjectParams',
+		'Show-PipeServerLog', 'Show-VerboseData', 'Start-PipeSession', 'Stop-PipeSession', 'Test-PipeSession',
 		'Write-MyLog'
 	)
 	CmdletsToExport   = @()
@@ -62,17 +61,13 @@
 			Linux   = @{}
 			MacOS   = @{}
 		}
+		# InitFunctions previously ran Set-Window -Characters at load to seed console-size vars for the old
+		# Format-MyTextLine width probe. Set-Window has been removed (replaced by Set-MyWindowState for
+		# hide/restore); Format-MyTextLine now reads width live from (Get-Host).UI.RawUI.WindowSize.Width,
+		# so there is nothing to initialise. Left empty deliberately.
 		InitFunctions              = @{
 			''      = @{}
-			Windows = @{
-				1 = @{
-					Function = 'Set-Window'
-					Params   = @{
-						ProcessId  = 'pid'
-						Characters = $true
-					}
-				}
-			}
+			Windows = @{}
 			Linux   = @{}
 			MacOS   = @{}
 		}

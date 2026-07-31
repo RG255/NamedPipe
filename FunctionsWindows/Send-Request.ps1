@@ -1,4 +1,4 @@
-﻿Function Send-Request
+Function Send-Request
 {
   <#
     .SYNOPSIS
@@ -60,18 +60,20 @@
 
 
 	[CmdletBinding()]
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseProcessBlockForPipelineCommand', '', Justification = 'Send-Request takes exactly one request string per call by design (never a multi-item pipeline); the end block is intentional.')]
 	param
 	(
 		[Parameter(ValueFromPipeline ,Mandatory,HelpMessage = 'Please supply the request String')]
 		[Allowemptystring()]
 		[String]$Request,
 		[Parameter(Mandatory,HelpMessage = 'Please supply the Type For this command')]
-		[Validateset('Security', 'ScriptBlock', 'ExitPipe', 'Disconnect')]
+		[Validateset('Security', 'ScriptBlock', 'ExitPipe', 'Disconnect', 'Handoff')]
 		[Validatescript({
 					$_ -imatch $StrSecurity -or
 					$_ -imatch $StrScriptBlock -or
 					$_ -imatch $StrExitPipe -or
-					$_ -imatch $StrDisconnect
+					$_ -imatch $StrDisconnect -or
+					$_ -imatch $StrHandoff
 		})]
 		[String]$Type,
 		[Parameter(Mandatory,HelpMessage = 'Please supply the PipeInfo Object')]

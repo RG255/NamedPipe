@@ -1,4 +1,4 @@
-# NamedPipe Module v0.7 - User Guide
+# NamedPipe Module v0.12 - User Guide
 
 <!-- CONTRIBUTOR NOTE: Do NOT use em-dashes in this file. Use a regular hyphen (-) only.
      Em-dashes cause PowerShell parser errors in string literals and may be silently
@@ -57,6 +57,125 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 | Nonce-based liveness | Phase 2 uses `[guid]::NewGuid().ToString('N')` as a per-call challenge. A squatting process cannot pass the check without relaying the exact nonce value, confirming the original server process is alive. |
 | `ModuleToLoad.Path` | `ModuleToLoad` now accepts an optional `Path` field containing the full path to the consumer module's `.psd1` file. When present, the spawned server imports by path rather than by name+version. This is required when the module lives on a network or OneDrive drive (`L:\`, etc.) that is not in `$PSModulePath` in the elevated spawned process. |
 | Spawn path fix | `Start-PipeServerOrClient` now uses `Get-Module -Name NamedPipe \| Sort-Object Version -Descending \| Select-Object -First 1` to locate its own script file when building the spawned server command line. This replaces the previous `$MyInvocation`-based approach and is robust when multiple NamedPipe versions are simultaneously loaded in the session. |
+
+### What's New in v0.10 (injection hardening - IN PROGRESS)
+
+See `PIPE-INJECTION-HARDENING-PLAN.md` for the full plan. 0.10 is opt-in: existing consumers pin 0.9 and
+are unaffected. Behaviour is IDENTICAL to 0.9 unless you opt in to the new option below.
+
+| Feature | Description |
+|---------|-------------|
+| `RequestPolicy` option (request allowlist) | Session-level option that constrains what the elevated server will execute. When set, every request must pass a **default-deny AST allowlist** BEFORE it runs: only calls to commands in `AllowedCommands`, with literal/variable/array/hashtable arguments, are permitted; everything else (Add-Type, `&`/`.` invocation, Invoke-Expression, `.NET` method/type expressions, in-request function defs, computed/interpolated arguments, and - by default-deny - any construct not on the allow list, e.g. a `LanguageMode` assignment) is rejected. On rejection the server does NOT execute and returns `Error = 'Request blocked by pipe request policy: <reason>'`. **Not set = no enforcement (unchanged from 0.9).** |
+
+**Usage:**
+
+```powershell
+$Session = Start-PipeSession -MyParameters $Private:MyBoundParameters -Options @{
+    $StrAdminRequired = $True
+    # Only these commands may run over the pipe; anything else is refused before execution.
+    RequestPolicy     = @{
+        AllowedCommands        = @('Invoke-VHDAction')   # bare command names, case-insensitive
+        AllowComputedArguments = $false                  # $true relaxes interpolated-string args only
+    }
+}
+```
+
+Notes:
+- Argument VALUES stay free (paths, sizes, ...); only the command surface and argument *shape* are
+  constrained. Values are still escaped by `ConvertTo-Parameters`.
+- The "ship helper functions inside the scriptblock" pattern is refused under a policy - move that logic
+  into a named server function (the dispatch shape, e.g. `Invoke-VHDAction`, which is exactly what passes).
+- Strict by default: computed arguments (`$( )`, `-f`, command substitution, interpolated strings) are
+  rejected. Set `AllowComputedArguments = $true` to permit interpolated strings only.
+
+### What's New in v0.11 (transport hardening)
+
+v0.11 adds a second, automatic layer of protection to the pipe itself. Unlike the `RequestPolicy` option
+above, it needs **no configuration** - it is always on - and it does not change how you use the module.
+
+| Feature | Description |
+|---------|-------------|
+| Pipe integrity label | The data pipe is tagged with a Windows "Medium integrity" label the moment it is created, so a **low-integrity** process (see below) cannot connect to it at all - the operating system refuses the connection before any request is even sent. Normal apps are unaffected. Applied automatically; if it cannot be applied for any reason the pipe still works (the label is a bonus layer, never a blocker). |
+| No "Interactive" access widening | The pipe is granted only to your exact user account, never to the broad "any interactive user" identity. |
+| Capability nonce | Each session gets a one-time secret. The genuine client presents it the instant it connects; the server admits only a connection that shows the right secret and quietly drops any that does not. Automatic - you never see or handle it. |
+
+#### Understanding integrity levels (plain English)
+
+Windows stamps **every running program with a trust tier**, called its *integrity level* (IL). Think of
+it as a security clearance the program runs with:
+
+| Integrity level | What runs there | Example |
+|-----------------|-----------------|---------|
+| **High** | Administrator / elevated programs (after a UAC prompt) | An elevated PowerShell window; an installer you approved |
+| **Medium** | Normal programs you launch day to day | Your desktop apps, a normal PowerShell window, File Explorer |
+| **Low** | Deliberately **sandboxed** code that is treated as untrusted, so that if it is hijacked the damage is contained | A web browser's page/tab process, a PDF viewer's "protected mode", Windows Store / AppContainer apps |
+
+The important rule Windows enforces (called *Mandatory Integrity Control*): **a lower-integrity program
+cannot tamper with something owned by a higher-integrity one - even when they are the same user account.**
+That is exactly why a compromised web page (Low) cannot quietly reach into your documents or your normal
+apps (Medium): the account is the same, but the integrity level is not.
+
+#### Why the pipe needs this
+
+The pipe already restricts access by **user account** (its access-control list). But "same user account"
+is not the same as "trusted": a **Low-integrity** process running under your account - say, an exploited
+browser tab - still carries your account, so the account check alone would let it connect. Because the
+NamedPipe server can run privileged (elevated) work, we do not want any sandboxed/untrusted Low process
+to reach it.
+
+So the pipe is labelled **Medium**. Windows then refuses any process **below** Medium (i.e. Low) the
+access that connecting requires, while Medium and above connect normally. In short:
+
+- Your ordinary Medium programs (and elevated High ones) connect exactly as before - **no change**.
+- A Low-integrity process (a sandbox/AppContainer app, a browser-renderer or PDF-sandbox escape) is
+  **blocked by Windows itself**, before it can send a single request.
+
+This is a defence-in-depth layer. It does **not** replace the `RequestPolicy` allowlist - that constrains
+*what* a connected client may run; this constrains *who* (which trust tier) may connect at all. It also
+does not stop another *Medium* program running as you (that is a separate concern addressed elsewhere in
+the hardening plan). It specifically closes the "sandboxed/low-trust code escalating through the pipe"
+door.
+
+#### The capability nonce (plain English)
+
+A pipe's **name is not a secret**: any program on the machine can list the open pipe names, so knowing the
+name is not proof of being the right client. To close that gap, each session also mints a **nonce** - a
+one-time random secret (like a cloakroom ticket). The server is told the nonce when it starts; the genuine
+client is given the same nonce and **presents it as the very first thing it says** after connecting. The
+server compares: right ticket -> you are in; wrong ticket, or no ticket at all -> you are shown the door
+(disconnected) and the server keeps waiting for the real client.
+
+Two things make this the right fit here:
+
+- **It is not tied to which program you are.** The check is "do you hold the secret", not "are you a
+  specific process". That matters because some legitimate workflows hand the session from one window to
+  another - e.g. a GUI starts the elevated server, then opens a separate terminal window that continues
+  the same session. That terminal is a *different* program, but it can be given the same nonce, so it is
+  admitted. A rule based on "must be the exact program that started the server" would have wrongly locked
+  that terminal out.
+- **A stranger who only knows the pipe name is refused.** Without the secret, enumerating the name buys an
+  attacker nothing - the first line they send is not the nonce, so they are dropped before any request is
+  processed.
+
+This is automatic and invisible: you do not generate, pass, or see the nonce in normal use. (It is also a
+defence-in-depth layer, not a wall: if an attacker can read the genuine client's memory it can read the
+nonce too - an operating-system-integrity problem no pipe check can solve.)
+
+### What's New in v0.12 (leak-proof session hand-off)
+
+v0.11 admits a *different* process that presents the session nonce - which is what lets a GUI hand its
+elevated session to a separate terminal window. But *how* does that terminal get the nonce? Passing it in an
+environment variable or on the command line would leak it, because any process running as the same user can
+read those. v0.12 closes that gap: the nonce is **never** passed to the new process out-of-band. Instead the
+two ends do a short **PID-verified handshake** and the server delivers the nonce over the pipe itself, to the
+one process whose identity it has just confirmed.
+
+| Feature | Description |
+|---------|-------------|
+| PID hand-off (`HANDOFF` / `HANDIN`) | The authenticated client tells the server "the next connection will be process X"; the reconnecting process proves it really is X (Windows reports the connecting PID to the server - the client cannot forge it); only then does the server hand it the nonce. Nothing secret ever crosses a channel a bystander can read - only the pipe **name**, which is already public. |
+
+See **Session Hand-off** below for the full flow. Everything else is unchanged from v0.11, and consumers that
+do not use the hand-off are entirely unaffected.
 
 ## Architecture
 
@@ -248,6 +367,88 @@ because PSScriptAnalyzer cannot see the scope-walk usage. Suppress it with:
     Justification = '$Session is set for scope-walk reuse by called functions')]
 ```
 
+## Session Hand-off (transferring a live session to another process)
+
+"Sharing a Session Across Multiple Calls" above keeps one server for many calls **inside a single process**.
+A **hand-off** goes one step further: it transfers a live, already-elevated session to a **different
+process** - most often a GUI that spawns a separate terminal window and wants that window to keep using the
+same elevated server, with **no second UAC prompt** and **no secret leaking** between the two.
+
+### The problem it solves
+
+Three facts collide:
+
+1. The server admits a connection only if it presents the session **nonce** (the capability secret, see
+   "What's New in v0.11").
+2. The data pipe is **single-instance** - exactly one client may be connected at a time (this is required by
+   the Medium-integrity label). So the GUI and the terminal can never be connected at the same instant; one
+   must release the pipe before the other connects.
+3. The nonce **must not be handed to the new process out-of-band.** Environment variables and command-line
+   arguments are readable by any process running as the same user, so putting the nonce there would leak it to
+   exactly the same-user attacker the nonce exists to stop.
+
+### The protocol (v0.12)
+
+A short, PID-verified handshake. Only the pipe **name** (public - pipe names are enumerable) ever crosses
+out-of-band; the nonce is delivered over the PID-verified pipe.
+
+1. **The owner learns the new process's PID.** The GUI spawns the terminal with `-PassThru`, so it holds the
+   child's process object (its PID **X**) and a live handle that keeps X from being reused while the child lives.
+2. **The owner ARMS the server** - over its own authenticated connection it sends a `HANDOFF X` request. The
+   server records "the next hand-in must be process X". Only an already-authenticated client can arm a hand-off.
+3. **The owner releases the pipe** - it sends a `Disconnect` (the server re-listens) and disposes its client
+   handle, freeing the single instance. It keeps its nonce.
+4. **The new process claims the hand-off.** It connects and, as its very first line, sends the `HANDIN` marker
+   (instead of a nonce it does not have).
+5. **The server verifies identity and delivers the nonce.** It asks the kernel for the connecting client's PID
+   (`GetNamedPipeClientProcessId` - set by Windows, not by the client, so it cannot be spoofed). If it equals
+   the armed **X**, the server writes the **nonce** back over this now-verified channel; the new process stores
+   it and behaves as a normal client from then on. Any other PID, or a `HANDIN` with nothing armed, is refused
+   exactly like a wrong nonce.
+
+The new process learns it is in hand-off mode from a non-secret signal the consumer chooses (VHDTools uses the
+`$env:VHD_PIPE_NAME` environment variable, which carries only the public pipe name). It then does a `HANDIN`
+instead of the normal nonce handshake.
+
+### Reclaiming the session (hand-back)
+
+Because the nonce is a durable, reusable credential, the **original owner still holds it** after step 3. Once
+the borrowed process releases the pipe (its own `Disconnect`, e.g. when its work finishes), the owner simply
+reconnects and presents the nonce again - admitted on the normal path, no UAC. That is how a GUI keeps
+"owning" its elevated server across repeated hand-offs to short-lived terminal windows.
+
+Single-instance still applies: only one of them is connected at any instant. Whoever needs the server
+reconnects when it is free; the other waits (bounded by `ClientConnectTimeout`). A handy way to sequence this
+without stealing the pipe is to *poll* the instance's free/busy state with `WaitNamedPipe` (which reports
+availability **without** connecting) and only reconnect once it is free.
+
+### Owned vs borrowed sessions (a consumer responsibility)
+
+The server does not care who "owns" it - it admits whoever holds the nonce or wins a PID hand-off. But a
+**consumer** must decide, per session, whether *closing* it should **tear the server down** or merely
+**disconnect**:
+
+- The **owner** (the process that spawned the server) closes with `ExitPipe` when truly finished - the server
+  process exits.
+- A **borrowed** session (a process that received a hand-off) must close with `Disconnect`, never `ExitPipe` -
+  otherwise it kills the server out from under the owner. `Disconnect` leaves it alive and re-listening.
+
+A consumer typically tracks this with a "borrowed" flag on the session and routes teardown accordingly.
+
+### API summary
+
+| Step | Who | How |
+|------|-----|-----|
+| Arm the hand-off | authenticated owner | `Send-Request` with request type `Handoff` and the target PID as the payload |
+| Signal hand-off mode to the child | owner | a non-secret carrier of the **pipe name** only (e.g. an environment variable) - never the nonce |
+| Claim the hand-off | new (borrowed) process | connect with the client `Handin` option set - it sends the `HANDIN` marker and reads the nonce the server returns |
+| Reclaim after hand-back | owner | reconnect presenting the retained nonce (normal client path) |
+
+The markers `HANDOFF` (request type) and `HANDIN` (connect first-line) are shaped so they can never collide
+with a real nonce (a nonce is 32 lowercase hex characters). The whole exchange is line-based and happens
+before the normal request loop, so it never disturbs request framing. Nothing here changes how non-hand-off
+consumers work - they never send `HANDOFF`/`HANDIN`, so their normal nonce path is untouched.
+
 ## Setting Up Your Script
 
 ### Script Parameters
@@ -263,8 +464,8 @@ Param (
     [String[]]$AccessIdentifier = @(),
     [Switch]$AdminRequired,
     [Switch]$Wait,
-    [Parameter(HelpMessage = 'Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug output (combine: 3=1+2, 7=all)')]
-    [ValidateRange(0, 7)]
+    [Parameter(HelpMessage = 'Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug output, 8=keep clean-run log (combine: 3=1+2, 15=all)')]
+    [ValidateRange(0, 15)]
     [int]$InfoDisplay = 0,
     [Switch]$NoExitOnError,
     [Parameter(HelpMessage = 'Serialization depth (default 2, avoid >10 for ACL objects)')]
@@ -315,7 +516,7 @@ You can pass a hashtable of overrides to `Start-PipeSession`:
 
 ```powershell
 $Session = Start-PipeSession -MyParameters $Private:MyBoundParameters -Options @{
-    $StrInfoDisplay        = 7  # Bitmask: 1=progress, 2=verbose data, 4=debug (7=all)
+    $StrInfoDisplay        = 7  # Bitmask: 1=progress, 2=verbose data, 4=debug, 8=keep clean-run log (15=all)
     $StrAdminRequired      = $True
     $StrWait               = $True
     $StrWindowStyle        = $StrMinimized
@@ -385,7 +586,7 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `InfoDisplay` | Int | 0 | Bitmask: 1=server/client progress, 2=Show-VerboseData, 4=debug output (combine values, e.g. 7=all) |
+| `InfoDisplay` | Int | 0 | Bitmask: 1=server/client progress, 2=Show-VerboseData, 4=debug output, 8=keep server diagnostics log on a clean run (combine values, e.g. 15=all) |
 | `AdminRequired` | Bool | $False | Run server process with elevated (Administrator) privileges |
 | `Wait` | Bool | $False | Keep server window open after the pipe closes |
 | `WindowStyle` | String | Minimized | Server window style: Normal, Minimized, Maximized, Hidden |
@@ -480,19 +681,22 @@ Control debug output with the InfoDisplay parameter using a bitmask (combine val
 | 1 | 1 | `$InfoDisplayBitProgress` | **Server/client progress** - `[Server] Executing:` messages via Send-ProgressInfo |
 | 2 | 2 | `$InfoDisplayBitVerbose` | **Show-VerboseData** - displays data structure contents in formatted tables |
 | 4 | 4 | `$InfoDisplayBitDebug` | **Debug output** - DEBUG Write-Host statements showing pipe operations, serialization, chunk transfers |
+| 8 | 8 | `$InfoDisplayBitKeepLog` | **Keep server diagnostics log** - persist the per-session server log even on a CLEAN exit. Failures (crash / unclaimed timeout) are logged regardless of this bit; this only affects whether a *successful* run's log is kept. See "Server diagnostics log" below. |
 
-Common combinations: `1` = progress only, `3` = progress + verbose data, `7` = everything
+Common combinations: `1` = progress only, `3` = progress + verbose data, `7` = all console output, `15` = everything including a kept log
 
 ```powershell
 # Example: Enable server/client progress messages only
 .\MyScript.ps1 -InfoDisplay 1
-# Example: Enable all debug output
+# Example: Enable all console debug output
 .\MyScript.ps1 -InfoDisplay 7
+# Example: silent, but keep the server diagnostics log for a successful run too
+.\MyScript.ps1 -InfoDisplay 8
 ```
 
 ### InfoDisplay Named Constants
 
-The module exports three named constants for use in code that checks InfoDisplay bits.
+The module exports four named constants for use in code that checks InfoDisplay bits.
 These are defined in `DefineVariablesPipe.ps1` and exported to global scope when the module
 is imported:
 
@@ -500,6 +704,7 @@ is imported:
 $InfoDisplayBitProgress = 1   # server/client progress messages
 $InfoDisplayBitVerbose  = 2   # Show-VerboseData calls
 $InfoDisplayBitDebug    = 4   # debug Write-Host output
+$InfoDisplayBitKeepLog  = 8   # keep the server diagnostics log on a clean exit
 
 # Use with -band instead of comparing literal numbers:
 if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitProgress)
@@ -510,6 +715,43 @@ if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitProgress)
 
 Using the named constants makes code easier to read and means a single change to the constant
 definition updates all uses automatically.
+
+## Server diagnostics log
+
+Because the elevated pipe server runs in its own (usually hidden) window, v0.11 captures what happens on the
+server side to a file instead of relying on you watching that window.
+
+**What is written, and when.** During a session the server records timestamped milestones (pipe created,
+client connected, connection rejected, outcome). On exit it decides what to keep:
+
+- **Failures are always kept** - a crash, or an unclaimed-connection timeout, writes a log regardless of
+  `InfoDisplay`. This is the safety net.
+- **A clean run is discarded by default** - a successful session writes nothing, so busy consumers do not
+  accumulate throwaway files. To keep a successful run's log too, set `InfoDisplay` **bit 8** (see the
+  InfoDisplay Bitmask section).
+
+**Where.** One file per session at `%APPDATA%\NamedPipe-Logs\server-<yyyyMMdd-HHmmss>-<pipename>.log`. The
+server elevates as **the same user**, so the log lands in your own profile - you can read it **without admin
+rights**.
+
+**It is deliberately secrets-free.** Because a program running as you can read your own `%APPDATA%`, the log
+never contains the session nonce, request arguments, or full paths (drive-letter paths are redacted). Treat
+it as a diagnostic breadcrumb, not a confidential audit trail.
+
+**Reading it.** Two helper functions find and show logs so you never need the path:
+
+```powershell
+Show-PipeServerLog                                   # print the most recent server log
+Get-PipeServerLog -Newest 1 | Get-Content            # same, as a file you can process
+Get-PipeServerLog -PipeName $Session.ServerClientParams.PipeInfo.Name   # logs for one session
+```
+
+**Retention.** Old logs are pruned at server startup. The window is the `LogRetentionDays` option (default
+`14`; `0` = keep forever), passed like any other option:
+
+```powershell
+$Session = Start-PipeSession -MyParameters $bp -Options @{ LogRetentionDays = 30 }
+```
 
 ## Chunking
 
@@ -671,7 +913,7 @@ Param (
     [String[]]$AccessIdentifier = @(),
     [Switch]$AdminRequired,
     [Switch]$Wait,
-    [ValidateRange(0, 7)]
+    [ValidateRange(0, 15)]
     [int]$InfoDisplay = 0,
     [Switch]$NoExitOnError,
     [ValidateRange(1, 100)]
@@ -832,7 +1074,7 @@ $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before impor
 
 ### Debug output appearing when not expected
 **Cause**: InfoDisplay bitmask has bits set that enable unwanted output.
-**Solution**: Set InfoDisplay to 0 for silent operation. Use 1 for progress only, 2 for verbose data, 4 for debug, or combine (e.g. 7=all).
+**Solution**: Set InfoDisplay to 0 for silent operation. Use 1 for progress only, 2 for verbose data, 4 for debug, 8 to keep the server diagnostics log on a clean run, or combine (e.g. 15=all).
 
 ### "Function not found" errors
 **Cause**: Attempting to call an internal function that is no longer exported in v0.4.

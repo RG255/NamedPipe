@@ -7,8 +7,8 @@ Write-Host "StrSecurity exists: $(Test-Path Variable:StrSecurity)"
 Write-Host "StrScriptBlock exists: $(Test-Path Variable:StrScriptBlock)"
 Write-Host "StrType exists: $(Test-Path Variable:StrType)"
 
-# Load the module
-Import-Module NamedPipe -RequiredVersion 0.9
+# Load the module - DEPLOYED 0.10 by name+version (deploy 0.10 first)
+Import-Module NamedPipe -RequiredVersion 0.12
 
 # Check variables after module load
 Write-Host "`n=== After Module Load ===" -ForegroundColor Yellow

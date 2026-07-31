@@ -1,110 +1,121 @@
-﻿function Assert-Folder 
+# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-Folder.ps1 by Sync-SharedUtilities - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+Function Assert-Folder
 {
 	<#
-			.SYNOPSIS
-			Tests, creates, or removes folders in a predictable, structured way.
+		.SYNOPSIS
+		Tests, creates, or removes a folder.
 
-			.DESCRIPTION
-			Accepts folder paths via pipeline and performs one of the following operations:
+		.DESCRIPTION
+		Accepts a folder path (via pipeline or parameter) and performs one of:
 
-			Test    - folder must exist
-			Create  - create folder if missing
-			Remove  - remove folder if it exists
+		  Test    - verify the folder exists
+		  Create  - create the folder if it does not already exist
+		  Remove  - remove the folder if it exists
 
-			Returns a structured object describing success/failure.
+		Always returns a structured object describing the outcome.
+
+		.PARAMETER InputObject
+		Path to the folder to operate on.
+
+		.PARAMETER Option
+		Operation to perform: Test | Create | Remove. Default: Test.
+
+		.EXAMPLE
+		'C:\Temp\Logs' | Assert-Folder -Option Create
+		Returns: @{ Path='C:\Temp\Logs'; Operation='Create'; Success=$true; Message='' }
+
+		.EXAMPLE
+		'C:\Temp\Missing' | Assert-Folder
+		Returns: @{ Path='C:\Temp\Missing'; Operation='Test'; Success=$false; Message='Folder does not exist.' }
+
+		.OUTPUTS
+		[pscustomobject] with properties: Path, Operation, Success, Message.
 	#>
 
-	[CmdletBinding()]
-	param(
-		[Parameter(Mandatory, ValueFromPipeline)]
+	[CmdletBinding(PositionalBinding = $False)]
+	Param (
+		[Parameter(Mandatory = $True, ValueFromPipeline = $True,
+			HelpMessage = 'Path to the folder')]
 		[AllowEmptyString()]
-		[string]$InputObject,
+		[String]$InputObject,
 
-		[ValidateSet('Create','Remove','Test')]
-		[string]$Option = 'Test'
+		[ValidateSet('Create', 'Remove', 'Test')]
+		[String]$Option = 'Test'
 	)
 
-	begin {
-		if ($Script:FTrace) 
-		{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
-	}
+	Process
+	{
+		$Private:Path = $InputObject
 
-	process {
-		$Path = $InputObject
-
-		# Handle null/empty input
-		if ([string]::IsNullOrWhiteSpace($Path)) 
+		if ([String]::IsNullOrWhiteSpace($Private:Path))
 		{
 			return [pscustomobject]@{
-				Path      = $Path
+				Path      = $Private:Path
 				Operation = $Option
 				Success   = $false
 				Message   = 'Input path is null or empty.'
 			}
 		}
 
-		# Pre-calc
-		$FolderExists = Test-Path -Path $Path -PathType Container
+		$Private:FolderExists = Test-Path -Path $Private:Path -PathType Container
 
-		try 
+		try
 		{
-			switch ($Option) {
-
-				'Test' 
+			switch ($Option)
+			{
+				'Test'
 				{
-					if ($FolderExists) 
+					if ($Private:FolderExists)
 					{
 						return [pscustomobject]@{
-							Path      = $Path
+							Path      = $Private:Path
 							Operation = 'Test'
 							Success   = $true
 							Message   = ''
 						}
 					}
 					return [pscustomobject]@{
-						Path      = $Path
+						Path      = $Private:Path
 						Operation = 'Test'
 						Success   = $false
 						Message   = 'Folder does not exist.'
 					}
 				}
 
-				'Create' 
+				'Create'
 				{
-					if ($FolderExists) 
+					if ($Private:FolderExists)
 					{
 						return [pscustomobject]@{
-							Path      = $Path
+							Path      = $Private:Path
 							Operation = 'Create'
 							Success   = $false
 							Message   = 'Folder already exists.'
 						}
 					}
-
-					$null = New-Item -Path $Path -ItemType Directory -Force -ErrorAction Stop
+					$null = New-Item -Path $Private:Path -ItemType Directory -Force -ErrorAction Stop
 					return [pscustomobject]@{
-						Path      = $Path
+						Path      = $Private:Path
 						Operation = 'Create'
 						Success   = $true
 						Message   = ''
 					}
 				}
 
-				'Remove' 
+				'Remove'
 				{
-					if (-not $FolderExists) 
+					if (-not $Private:FolderExists)
 					{
 						return [pscustomobject]@{
-							Path      = $Path
+							Path      = $Private:Path
 							Operation = 'Remove'
 							Success   = $false
 							Message   = 'Folder does not exist.'
 						}
 					}
-
-					Remove-Item -Path $Path -Recurse -Force -ErrorAction Stop
+					Remove-Item -Path $Private:Path -Recurse -Force -ErrorAction Stop
 					return [pscustomobject]@{
-						Path      = $Path
+						Path      = $Private:Path
 						Operation = 'Remove'
 						Success   = $true
 						Message   = ''
@@ -112,14 +123,13 @@
 				}
 			}
 		}
-		catch 
+		catch
 		{
-			$Err = Get-MyErrors -Return -Indent 2 -LinePad 0
 			return [pscustomobject]@{
-				Path      = $Path
+				Path      = $Private:Path
 				Operation = $Option
 				Success   = $false
-				Message   = "Operation failed: $($Err[6]) $($Err[8])"
+				Message   = ('Operation failed: {0}' -f $_.Exception.Message)
 			}
 		}
 	}

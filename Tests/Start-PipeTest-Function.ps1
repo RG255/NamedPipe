@@ -12,8 +12,8 @@ Function Start-PipeTest
 		[Switch]$AdminRequired,
 		[Parameter(DontShow = $True)]
 		[Switch]$Wait,
-		[Parameter(HelpMessage = 'Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug (7=all)')]
-		[ValidateRange(0, 7)]
+		[Parameter(HelpMessage = 'Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug, 8=keep clean-run log (15=all)')]
+		[ValidateRange(0, 15)]
 		[int]$InfoDisplay = 0,
 		[Parameter(DontShow = $True)]
 		[Switch]$NoExitOnError,
@@ -30,7 +30,9 @@ Function Start-PipeTest
 	)
 
 	Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-	Import-Module -Name NamedPipe -Force -RequiredVersion 0.9
+	# 0.10: use the DEPLOYED 0.10 by name+version (the spawned server re-resolves the module and the
+	# source dev folder is not on PSModulePath, which caused connect timeouts). Deploy 0.10 first.
+	Import-Module -Name NamedPipe -Force -RequiredVersion 0.12
 	function Invoke-RequiredActions
 	{
 		<#
@@ -197,7 +199,7 @@ Function Start-PipeTest
 	#$BPList = Remove-Breakpoints -BPObject $BPList
 	$Private:MyOptions = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Private:MyBoundParameters
 	# These options can be set to enable various options but can also be part of a script's parameters at startup
-	#$MyOptions.$StrInfoDisplay = $InfoDisplay # Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug output (combine: 3=1+2, 7=all)
+	#$MyOptions.$StrInfoDisplay = $InfoDisplay # Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug output, 8=keep clean-run log (combine: 3=1+2, 15=all)
 	#$MyOptions.$StrNoExitOnError = $NoExitOnError # The powershell window will not close when an error has occured
 	#$MyOptions.$StrAdminRequired = $AdminRequired # Set to true in the server process needs to run as administrator
 	#$MyOptions.$StrVerbose = $False # Will pass the -verbose option if required when true

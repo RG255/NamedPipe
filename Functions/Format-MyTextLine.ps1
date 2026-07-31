@@ -1,207 +1,184 @@
-﻿Function Format-MyTextLine
+# VENDORED from CommonScripts\0.2\Functions\Format-MyTextLine.ps1 by Sync-SharedUtilities - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+Function Format-MyTextLine
 {
-  <#
-      .SYNOPSIS
-      Formats a line of text given the supplied Parameters useful to format help type output
-      to match the current screen width but can be used for anything.
+	<#
+		.SYNOPSIS
+		Formats a line of text with optional parameter label and automatic word-wrapping.
 
-      Requires a call to Set-Window with the -characters option to initialise the window size variables
+		.DESCRIPTION
+		Produces console-friendly output lines with aligned parameter labels and text.
+		Automatically wraps long text to fit the window width, breaking at spaces or
+		line-ending characters. Useful for building -Help output and status messages.
 
-      e.g. Set-Window -ProcessId $Pid -Characters
-      as a minimum the window size, title and position can also be set in this call
-      See Set-Window for more detail.
+		.PARAMETER Text
+		The text body to format and (optionally) wrap.
 
-      .DESCRIPTION
-      Will allow formatting like this:
-      -help      : This is the text that will describe the help option
-                   and may carry over to the next line if text is too
-                   long
-      -Opt       : Can describe an option that can be used with the
-      -help
+		.PARAMETER Parameter
+		Optional label placed to the left of the text, padded to ParamLen characters.
 
-      .PARAMETER Parameter
-      Describe Parameter -Parameter: is the "-help" in the description above.
+		.PARAMETER ParamTrail
+		Character(s) between the label and the text. Defaults to nothing.
 
-      .PARAMETER Text
-      Describe Parameter -Text: is the text to be formatted.
+		.PARAMETER InitialLF
+		A CR, LF, or CRLF sequence prepended to the output. Must be one of those
+		whitespace sequences or empty.
 
-      .PARAMETER ParamLen
-      Describe Parameter -ParamLen: is the amount of indent before the text.
+		.PARAMETER ParamLen
+		Width reserved for the label column. Defaults to the label's own length.
 
-      .PARAMETER IndentLen
-      Describe Parameter -IndentLen: is the amount of indent before the -Parameter item.
+		.PARAMETER IndentLen
+		Number of spaces to indent the label. Defaults to 0.
 
-      .PARAMETER ParamTrail
-      Describe Parameter -ParamTrail: Is the character(s) that separate the Parameter
-      from the text in the case above the ": ".
+		.PARAMETER SetWindowWidth
+		Override the auto-detected window width. Set to 0 (default) to auto-detect.
 
-      .PARAMETER InitialLF
-      Describe Parameter -InitialLF: Passes a CR, LF, or CRLF sequence which will preceed
-      everything that is formatted.
+		.PARAMETER NoWrap
+		Suppress word-wrapping. The text is appended as-is after the label.
 
-      .PARAMETER NoWrap
-      Describe Parameter -NoWrap: Will not process the textual part of the line but will honor
-      the parameter, paramtrail, indent and initialLF parameters.
+		.EXAMPLE
+		Format-MyTextLine -Parameter '-help' -ParamLen 10 -InitialLF "`r`n" `
+		                  -Text 'Will output this text.' -ParamTrail ': '
 
-      .PARAMETER SetWindowWidth
-      Describe Parameter -SetWindowWidth: This parameter determines the point in the assumbly of 
-      the text line that the line will wrap. By default it is set to the width of the Interactive window
-      returned from Set-Window -ProcessId $Pid -Characters. Set-Window sets this variable automatically.
-      This can be overridden by setting the length here as required or using the -NoWrap option.
+		Returns (preceded by CRLF):
+		-help     : Will output this text.
 
-      .EXAMPLE
-      $MyText=Format-MyTextLine -Parameter '-help' -ParamLen 10 -InitialLF "`r`n" -Text 'Will output this text.' -ParamTrail ": "
+		.OUTPUTS
+		System.String - The formatted line.
+	#>
 
-      Will return this text preceeded by a CRLF sequence to the variable $MyText:
+	[CmdletBinding(PositionalBinding = $False)]
+	Param (
+		[Parameter(Mandatory = $True, HelpMessage = 'Please supply the string to process')]
+		[AllowEmptyString()]
+		[String]$Text,
+		[String]$Parameter    = '',
+		[String]$ParamTrail   = '',
+		[ValidatePattern('(?:[\n]+?|[\r]+?|[\r][\n]+?|^$)')]
+		[AllowEmptyString()]
+		[String]$InitialLF    = '',
+		[ValidateRange(0, [int]::MaxValue)]
+		[int]$ParamLen        = [int]0,
+		[ValidateRange(0, [int]::MaxValue)]
+		[int]$IndentLen       = [int]0,
+		[ValidateRange(0, [int]::MaxValue)]
+		[int]$SetWindowWidth  = [int]0,
+		[switch]$NoWrap
+	)
 
-      -help     : Will output this text.
+	# ── Inner helper: find a safe line-break position ─────────────────────────
+	Function Split-MyLine
+	{
+		[CmdletBinding(PositionalBinding = $False)]
+		Param (
+			[Parameter(Mandatory = $True, ValueFromPipeline = $True)]
+			[String]$Text
+		)
 
-      $MyText=Format-MyTextLine -Parameter "-help" -ParamLen 10 -InitialLF "`r`n" -Text 'Will output this text.' -ParamTrail ": " -IndentLen 4
+		Process
+		{
+		# Already fits - return full length
+		if ($Text.Length -le $Maxlen)
+		{ return $Text.Length }
 
-      Will return this text preceeded by a CRLF sequence note the indent of 4 characters to the variable $MyText:
+		# Degenerate case (should not occur in practice)
+		if ($Text.Length -le 0)
+		{ return 1 }
 
-          -help : Will output this text.
+		$SearchText = $Text.Substring(0, $Maxlen)
 
-      Successive calls can be used to build up one string variable by using the $MyText+=Format-MyTextLine... construct before using
-      the string for whatever means.
+		# Check break candidates in priority order: CRLF > CR > LF > space
+		$BreakPoints = @(
+			@{ Char = "`r`n"; Pos = $SearchText.IndexOf("`r`n")    }
+			@{ Char = "`r";   Pos = $SearchText.LastIndexOf("`r")   }
+			@{ Char = "`n";   Pos = $SearchText.LastIndexOf("`n")   }
+			@{ Char = ' ';    Pos = $SearchText.LastIndexOf(' ')    }
+		)
 
-      .NOTES
-      Place additional notes here.
+		foreach ($BP in $BreakPoints)
+		{
+			if ($BP.Pos -gt 0 -and $BP.Pos -le $Maxlen)
+			{
+				# For CRLF use the IndexOf position (first occurrence)
+				return $BP.Pos
+			}
+		}
 
-      .LINK
-      URLs to related sites
-      The first link is opened by Get-Help -Online Format-MyTextLine
+		# No good break point - hard-break at max
+		return $Maxlen
+		} # end Process
+	}
 
-      .INPUTS
-      List of input types that are accepted by this function.
+	# ── Determine effective window width ──────────────────────────────────────
+	$Private:MyWWidth = [int]0
 
-      .OUTPUTS
-      Returns a formatted string
-  #>
-  [CmdletBinding(PositionalBinding = $False)]
-  Param (
-    [Parameter(Mandatory = $True,HelpMessage = 'Please supply the string to Process')]
-    [AllowEmptyString()]
-    [String]$Text,
-    [String]$Parameter = $Null,
-    [String]$ParamTrail = $Null,
-    [ValidatePattern('(?:[\n]+?|[\r]+?|[\r][\n]+?|^$)')]
-    [AllowEmptyString()]
-    [String]$InitialLF = $Null,
-    [ValidateRange(0, [int]::MaxValue)]
-    [int]$ParamLen = [int]0,
-    [ValidateRange(0, [int]::MaxValue)]
-    [int]$IndentLen = [int]0,
-    [ValidateRange(0, [int]::MaxValue)]
-    [int]$SetWindowWidth = [int]$Script:WindowWidth,
-    [switch]$NoWrap
-  )
-  Function Split-MyLine
-  {
-    [CmdletBinding(PositionalBinding = $False)]
-    Param (
-      [Parameter(Mandatory = $True,HelpMessage = 'Please supply the string to Process',ValueFromPipeline = $True)]
-      [String]$Text
-    )
+	if ($SetWindowWidth -gt 0)
+	{ $Private:MyWWidth = $SetWindowWidth }
+	else
+	{
+		# Try reading from the host's raw UI; fall back to no-wrap if unavailable
+		try
+		{ $Private:MyWWidth = (Get-Host).UI.RawUI.WindowSize.Width }
+		catch
+		{ $Private:MyWWidth = 0 }
+	}
 
-    # Return text length if already within limits
-    if ($Text.Length -le $Maxlen)
-    { return $Text.Length }
+	if ($Private:MyWWidth -le 0)
+	{ $NoWrap = $True }
 
-    # Handle zero-length strings
-    if ($Text.Length -le [int]0)
-    {
-      $Text = 'A zero length string was passed'
-      return $Text.Length
-    }
+	# ── Column geometry ───────────────────────────────────────────────────────
+	if (-not $ParamLen)
+	{ $ParamLen = $Parameter.Length }
 
-    # Get substring to search within
-    $SearchText = $Text.Substring(0, $Maxlen)
+	$PadRight       = [Math]::Max($ParamLen - $IndentLen, 0)
+	$ParamTrailLen  = $ParamTrail.Length
+	$Maxlen         = $Private:MyWWidth - ($ParamLen + $ParamTrailLen)
 
-    # Find best break point - check in priority order: CRLF, CR, LF, space
-    $BreakPoints = @(
-      @{Char = $Script:StrCrlf; Pos = $SearchText.LastIndexOf($Script:StrCrlf); Method = 'IndexOf'}
-      @{Char = $Script:StrCr;   Pos = $SearchText.LastIndexOf($Script:StrCr);   Method = 'LastIndexOf'}
-      @{Char = $Script:StrLF;   Pos = $SearchText.LastIndexOf($Script:StrLF);   Method = 'LastIndexOf'}
-      @{Char = ' ';             Pos = $SearchText.LastIndexOf(' ');             Method = 'LastIndexOf'}
-    )
+	# If the label overflows its column, shrink the available text width
+	if ($Parameter.Length -gt $ParamLen)
+	{ $Maxlen -= ($Parameter.Length - $ParamLen) }
 
-    foreach ($BreakPoint in $BreakPoints)
-    {
-      if ($BreakPoint.Pos -gt [int]0 -and $BreakPoint.Pos -le $Maxlen)
-      {
-        # Special case for CRLF - use IndexOf instead of LastIndexOf
-        if ($BreakPoint.Char -eq $Script:StrCrlf)
-        { return $SearchText.IndexOf($Script:StrCrlf) }
-        else
-        { return $BreakPoint.Pos }
-      }
-    }
+	# Require at least 20 characters for wrapped text to be meaningful
+	$MinWindowWidth = $ParamLen + $ParamTrailLen + 20
+	if ($MinWindowWidth -gt $Private:MyWWidth)
+	{ $NoWrap = $True }
 
-    # No good break point found, break at maxlen
-    return $Maxlen
-  }
-  If ($Script:FTrace)
-  {Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
-  if ($SetWindowWidth)
-  {$MyWWidth = $SetWindowWidth}
-  elseif ($Script:WindowWidth)
-  {$MyWWidth = $Script:WindowWidth}
-  elseIf ($Script:Interactive -and -not $NoWrap) # Check that window width is set otherwise things will fail
-  {$MyWWidth = (Set-Window -ProcessId $pid -Characters -Passthru).characterswide}
-  ElseIf(-Not $MyWWidth)
-  {
-    If ($Script:LogLevel -gt [int]4)
-    {Write-MyLog -PathToLogFile $Script:LogFilePath -Message 'The variable $MyWWidth has not been set! Returning a line with no text wrapping.'}
-    $NoWrap = $True
-  }
-  if(-not $ParamLen)
-  {$ParamLen = $Parameter.length} # Set the length of the parameter
-  $PadRight=$ParamLen-$IndentLen # Set the value to pad the parameter to the correct length
-  If ($PadRight -lt [int]0) # If negative set to zero
-  {$Padright=[int]0}
-  $ParamTrailLen = $ParamTrail.Length # Get length of the ParamTrail passed
-  $Maxlen = $MyWWidth-($ParamLen+$ParamTrailLen) # Set the value for the longest text length before wrap required
-  If ($Parameter.Length -gt $ParamLen)
-  {$Maxlen=$Maxlen -($Parameter.Length-$ParamLen)}
-  $MinWindowWidth = $ParamLen+$ParamTrailLen+20 # What has to be left after the intial formatting to wrap the text
-  $FirstLine = $True # This is the first line of this call
-    
-  if ($MinWindowWidth -gt $MyWWidth) # If NoWrap or space left to wrap text < 20 dont wrap
-  {
-    If ($Script:LogLevel -gt [int]4)
-    {Write-MyLog -PathToLogFile $Script:LogFilePath -Message 'No line wrapping window not wide enough!'}
-    $NoWrap=$True
-  }
-  
-  [String]$TextOut = $Null # Set output string to no content
-  $TextOut += ('{0}{1}{2}' -f ''.Padleft($IndentLen), $Parameter.PadRight($PadRight), $ParamTrail)
-    
-  if ($NoWrap)
-  {$TextOut += ('{0}' -f $Text)}
-  else # Proces the line
-  {
-    $Text = $Text.Trim() # Remove leading and trailing white space
-    Write-Debug -Message ('Width:[{0}], Height:[{1}]' -f $MyWWidth, $Script:WindowHeight)
-    Write-Verbose -Message ('{0}' -f $Text)
-    if ($Text.Length -le $Maxlen) # if text less than max length
-    {$TextOut += ('{0}' -f $Text)}
-    else # Text line is greater than max length (available space)
-    {
-      while ($Text.Length -gt $Maxlen) # if the text line is longer that max width see where we can split it nicely
-      {
-        $Position = $Text|Split-MyLine
-        If ($FirstLine)
-        {
-          $TextOut += ('{0}' -f $Text.Substring(0, $Position))
-          $FirstLine = $False
-        }
-        else
-        {$TextOut += ('{0}{1}{2}' -f $Script:StrCrlf, ''.PadLeft($ParamLen+$ParamTrailLen), $Text.Substring(0, $Position))}
-        $Text = $Text.Substring($Position).trim() # remove start of the text we have already processed and remove white space
-      }
-      $TextOut += ('{0}{1}{2}' -f $Script:StrCrlf, ''.PadLeft($ParamLen+$ParamTrailLen), $Text)
-    }
-  }
-  ('{0}{1}' -f $InitialLF, $TextOut) # return result
+	# ── Build output string ───────────────────────────────────────────────────
+	[String]$TextOut = ''
+	$TextOut += ('{0}{1}{2}' -f ''.PadLeft($IndentLen), $Parameter.PadRight($PadRight), $ParamTrail)
+
+	if ($NoWrap)
+	{
+		$TextOut += $Text
+	}
+	else
+	{
+		$Text = $Text.Trim()
+
+		if ($Text.Length -le $Maxlen)
+		{
+			$TextOut += $Text
+		}
+		else
+		{
+			$Private:FirstLine = $True
+			$Private:Pad       = ''.PadLeft($ParamLen + $ParamTrailLen)
+
+			while ($Text.Length -gt $Maxlen)
+			{
+				$Position = $Text | Split-MyLine
+				if ($Private:FirstLine)
+				{
+					$TextOut += $Text.Substring(0, $Position)
+					$Private:FirstLine = $False
+				}
+				else
+				{ $TextOut += ("`r`n{0}{1}" -f $Private:Pad, $Text.Substring(0, $Position)) }
+				$Text = $Text.Substring($Position).TrimStart()
+			}
+			$TextOut += ("`r`n{0}{1}" -f $Private:Pad, $Text)
+		}
+	}
+
+	# Prepend any requested line-ending and return
+	('{0}{1}' -f $InitialLF, $TextOut)
 }

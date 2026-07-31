@@ -284,11 +284,11 @@ try
 				$InitFunc = $PSD1Data.PrivateData.InitFunctions[$Option][$Key]
 				if ($InitFunc.Function -and (Get-Command $InitFunc.Function -ErrorAction SilentlyContinue))
 				{
-					# Handle Set-Window specifically due to switch parameter requirements
-					if ($InitFunc.Function -eq 'Set-Window')
-					{
-						Set-Window -ProcessId $pid -Characters
-					}
+					# No init functions are currently wired - PrivateData.InitFunctions is empty on every OS.
+					# The only handler used to be a Set-Window -Characters warm-up, removed with Set-Window in
+					# 0.12 (NamedPipe now only hides/restores via Set-MyWindowState). If a future init function
+					# needs invoking at load, add its handling in this block.
+					Write-Verbose -Message ('Invoke-InitFunctions: no handler for [{0}] - skipped.' -f $InitFunc.Function)
 				}
 			}
 		}

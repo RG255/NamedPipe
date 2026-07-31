@@ -1,4 +1,4 @@
-﻿# In the following tables defining variables:
+# In the following tables defining variables:
 #
 # Option can be one of the following: AllScope, Private, Constant, ReadOnly, None
 # Scope  can be one of the following: Global, Local, Script , Using, Workflow
@@ -135,6 +135,7 @@ $script:FunctionExportTable = @{
 	'Format-MyTextLine'        = $true
 	'Get-MyErrors'             = $true
 	'Get-SBResult'             = $false   # internal - server-side only
+	'Test-RequestPolicy'       = $false   # internal - server-side request allowlist (0.10 injection hardening)
 	'Set-ObjectParams'         = $true
 	'Write-MyLog'              = $true
 	# Windows (FunctionsWindows/)
@@ -143,7 +144,6 @@ $script:FunctionExportTable = @{
 	'Exit-Pipe'                = $true
 	'Get-NewPipeName'          = $false   # internal
 	'Initialize-BPList'        = $true
-	'Publish-SetWindowCode'    = $false   # internal
 	'Receive-Data'             = $false   # internal
 	'Remove-Breakpoints'       = $true
 	'Send-Data'                = $false   # internal
@@ -151,7 +151,14 @@ $script:FunctionExportTable = @{
 	'Send-Request'             = $true
 	'Set-Breakpoints'          = $true
 	'Set-PipeSecurity'         = $false   # internal
-	'Set-Window'               = $true
+	'Set-PipeIntegrityLabel'   = $false   # internal - 0.11 mandatory-label hardening (4.1b)
+	'Add-ServerLogEntry'       = $false   # internal - 0.11 diagnostics log (4.5 step 1a)
+	'Save-ServerLog'           = $false   # internal - 0.11 diagnostics log (4.5 step 1a)
+	'Remove-OldServerLog'      = $false   # internal - 0.11 diagnostics log retention (4.5 step 1c)
+	'Get-PipeServerLog'        = $true    # 0.11 diagnostics log reader (4.5 step 1c)
+	'Show-PipeServerLog'       = $true    # 0.11 diagnostics log reader (4.5 step 1c)
+	'Register-PipeEventSource' = $true    # 0.11 Event Log source registration (4.5 step 1d)
+	'Set-MyWindowState'        = $false   # internal - VENDORED from CommonScripts (lightweight ShowWindow hide/restore; replaced Set-Window)
 	'Show-VerboseData'         = $true
 	'Start-PipeServerOrClient' = $false   # internal - use Start-PipeSession instead
 	'Test-UserOrGroupExists'   = $false   # internal

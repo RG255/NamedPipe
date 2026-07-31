@@ -1,5 +1,111 @@
 # NamedPipe Changelog
 
+## Version 0.12 - 2026-07-31 (branched 2026-07-21)
+
+### Fixes - crash-log path redaction (security review 2026-07-31)
+- The pipe server's crash handler redacted only `D:\...` paths from the stack trace / error detail written
+  to the server log and Event Log - the author's development drive. On any other machine, and for every
+  user of the public GitHub repo (who will be on `C:`), it redacted NOTHING, leaking full paths including
+  `C:\Users\<username>\...` - so the control was ineffective anywhere but the development machine. Now
+  matches any drive-qualified path
+  plus UNC (`\\server\share\...`), which the module can genuinely emit given it supports loading modules
+  from network drives. Same fix applied to 0.9 (committed to the public repo), 0.10 and 0.11.
+
+### Changes - leak-proof PID hand-off (see PID-HANDOFF-DESIGN.md)
+- Branched from 0.11 (which is the tested BACKSTOP: all transport hardening done + ConfigureDefender
+  migrated). 0.12 is the sandbox for the VHDTools GUI->terminal hand-off over the nonce-gated pipe WITHOUT
+  passing the nonce out-of-band. The authenticated client vouches for the terminal's PID (`HANDOFF X`); the
+  terminal proves it is that PID (`HANDIN` + `GetNamedPipeClientProcessId`, kernel-set/unspoofable) and the
+  server returns the nonce over that PID-verified channel. Nothing sensitive leaves the client process.
+- **Server side DONE + TESTED + DEPLOYED 2026-07-21.** `HANDOFF` request (arms `$ExpectedHandinPid` with the
+  PID in `$StrRequest`); `HANDIN` accept-gate (`GetNamedPipeClientProcessId` verifies the connecting PID, then
+  returns the nonce); client hand-in mode (`$StrHandin` option). Method proven first by `C:\Temp\pid-handoff-test.ps1`
+  (4/4); module regression `Tests\Test-PipeHandoff.ps1` 2/2 through a real spawned server (correct-PID child
+  admitted, wrong-PID refused). Normal nonce/re-listen/connect-deadline/log paths all still green.
+- **Client side DONE 2026-07-22.** VHDTools 0.4 `Connect-VHDExistingPipe` (HANDIN when `VHD_PIPE_NAME` is set,
+  reclaim-by-nonce otherwise), `New-VHDPipeSession` reconnect block, and the `Show-VHDManager` sequenced-reclaim
+  DispatcherTimer. Built on 0.12 primitives with no further NamedPipe change.
+- **Consumer migration DONE.** VHDTools 0.4, Macrium 0.2 and VaultTools 0.3 all pin `RequiredVersion = '0.12'`.
+- **PROVEN IN THE REAL WORLD 2026-07-31.** The full round trip - GUI hands its elevated session to a terminal
+  and reclaims it afterwards - verified in a real WPF session, not just the headless harness. This was the last
+  open gate: the PID hand-off is why 0.12 branched, and it now works in its actual usage mode.
+
+## Version 0.11 - 2026-07-17 (complete - superseded by 0.12)
+
+### Changes - transport hardening (Item 2 of the injection-hardening plan)
+
+- Branched from 0.10 as a sandbox for the riskier transport work; 0.10 stays the tested backstop.
+- **Pipe mandatory integrity label** (`Set-PipeIntegrityLabel`, internal): the data pipe is labelled
+  Medium at creation via post-create `SetSecurityInfo(LABEL_SECURITY_INFORMATION)`, so a Low-integrity
+  process cannot connect. Automatic, needs no privilege, and never blocks pipe creation (graceful on
+  failure). See USERGUIDE "What's New in v0.11" for a plain-English explanation of integrity levels.
+- Removed the broad "Interactive" (`S-1-5-4`) fallback on the health pipe; it now grants only the exact
+  current-user SID.
+- Regression tests: `Tests\Test-PipeIntegrityLabel.ps1` (Low-IL blocked / Medium allowed) and a label
+  check in `Tests\Start-PipeTest.ps1`.
+- **Capability-nonce client authentication (hardening 4.2):** the server holds a per-session nonce
+  (auto-generated in `Set-ObjectParams`, carried in `ServerClientParams`, so both the spawned server and
+  the inheriting client share it). On every connection the server reads the client's FIRST line and admits
+  it only if it matches the nonce; a wrong or absent first line is disconnected and the server keeps
+  listening. Admission is by the SECRET, not by PID - so the VHDTools GUI->terminal hand-off (a different
+  process presenting the same nonce) still works, while a blind pipe-name enumerator is refused. Backward
+  compatible: no nonce configured -> the check is skipped. The client-side `ServerClientParams.Nonce` is
+  exposed so a consumer can forward it to a hand-off process. Regression test:
+  `Tests\Test-PipeNonceAuth.ps1` (positive/hand-off, wrong-nonce refused, correct-nonce recovery - all
+  pass against the deployed module).
+- **Server diagnostics log (hardening 4.5, step 1a):** the spawned server buffers timestamped lifecycle
+  milestones (pipe created, client connected/validated, connection rejected, outcome) in memory and, on
+  exit, writes ONE per-session file `%APPDATA%\NamedPipe-Logs\server-<yyyyMMdd-HHmmss>-<pipename>.log` - but
+  only on a FAILURE outcome (`crashed` / `timed-out-unclaimed` / `unknown-exit`, always), or on a CLEAN exit
+  when new `InfoDisplay` bit 8 is set; a clean silent run discards the buffer (no file, no churn = identical
+  to prior behaviour). This closes the previously-SILENT timeout/unclaimed path (which logged nothing) and
+  unifies the old `server-error-<ts>.log` crash log onto the new name. Content is kept secrets-free: no
+  nonce/arguments, and drive-letter paths are redacted. Internal helpers `Add-ServerLogEntry` /
+  `Save-ServerLog` (idempotent, never throw). Tests: `Tests\Test-ServerLogE2E.ps1` (real server: discard at
+  0, keep at bit 8) + unit `C:\Temp\test-serverlog.ps1` (flush rules / redaction / coalescing / filename).
+- **`InfoDisplay` bit 8 (step 1b):** new bit `8` = keep a CLEAN run's server log (failures are logged
+  regardless). New named constant `$InfoDisplayBitKeepLog = 8`; every `InfoDisplay` `ValidateRange` widened
+  `(0,7)`->`(0,15)`; bitmask docs/USERGUIDE updated (`15` = all).
+- **Log retention + reader helpers (step 1c):** `LogRetentionDays` session option (default `14`; `0` = keep
+  forever) prunes old `server-*.log` at server startup (`Remove-OldServerLog`, internal). New exported
+  helpers `Get-PipeServerLog` / `Show-PipeServerLog` find and print logs so a non-admin consumer never needs
+  the path. Unit-tested (retention + reader 8/8).
+- **Event Log pointer (step 1d):** on a FAILURE outcome the server also writes a one-line **Application-log**
+  entry (source `NamedPipe`, Error for `crashed` / Warning for the timeouts) that points at the full
+  diagnostics file - the Event Log is the searchable index, the file is the detail. Uses the .NET
+  `EventLog` API (PS7 has no `Write-EventLog`); wrapped so a missing source or lack of permission degrades
+  silently to file-only. New exported `Register-PipeEventSource` (idempotent, needs admin) creates the
+  source; `Deploy-Modules.ps1` runs it over its existing elevation whenever NamedPipe is deployed (both the
+  RunAs and vault-session routes). Writing to the source afterwards needs no admin. Test: `C:\Temp\test-serverlog-1d.ps1`
+  (Error event points at the file on crash; a clean discarded run writes no event).
+  For a git-cloned copy that never runs Deploy, the **elevated server self-registers the source at startup**
+  (`if ($Administrator) { Register-PipeEventSource }`), so it self-provisions on first elevated use.
+- **Step 1 (server diagnostics log) is COMPLETE** (1a core / 1b bit 8 / 1c retention+readers / 1d Event Log).
+- **Connect-deadline / kill-unclaimed (4.3):** an unclaimed elevated server now **self-terminates in
+  ~`ClientConnectTimeout`** (a first-connect budget measured from pipe creation, as an overall stopwatch so a
+  wrong-nonce squatter cannot keep it alive) instead of lingering the full 60s re-listen window; only the
+  FIRST connect uses this short budget, re-listen after a validated session still uses `ServerWaitTimeout`, so
+  live/reuse/hand-off sessions are unaffected. The **unconditional crash `Pause` is removed** - it now honours
+  `-Wait` like the post-session Pause, so with no `-Wait` the server self-terminates on any exit (crash
+  included, captured by the log) and `-Wait` becomes the single opt-in "hold the window so I can look" switch.
+  `Register-EngineEvent PowerShell.Exiting` disposes the pipe as belt-and-braces. Test `Tests\Test-ConnectDeadline.ps1`
+  (unclaimed server gone in 6.6s not 60s, with a `timed-out-unclaimed` log). (Idle timeout was DROPPED - plan
+  §4.4. PID-auth was REPLACED by the capability nonce - plan §4.2.)
+- Downstream follow-up (NOT in this module): when VHDTools migrates from 0.9 to 0.11, its hand-off client
+  (`New-VHDPipeSession`, reading `$env:VHD_PIPE_NAME`) must also read the nonce from a second env var and
+  present it, or the 0.11 server will refuse the terminal reconnect.
+
+## Version 0.10 - 2026-07-17 (in progress)
+
+### Changes - injection hardening (Item 1 of the plan)
+
+- Branched from 0.9. **`RequestPolicy` option** (`Test-RequestPolicy`, gated in `Get-SBResult`): a
+  default-deny AST allowlist that constrains what the elevated server will execute - only allowlisted
+  command calls with literal/variable/array/hashtable arguments run; everything else (Add-Type, `&`/`.`,
+  Invoke-Expression, `.NET` method/type expressions, computed arguments, and any non-allowed AST node such
+  as a LanguageMode assignment) is refused before execution. Opt-in via `Start-PipeSession -Options`;
+  no policy = unchanged behaviour. See USERGUIDE "What's New in v0.10".
+
 ## Version 0.8 - 2026-04-14
 
 ### Changes

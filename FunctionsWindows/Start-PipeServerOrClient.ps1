@@ -196,10 +196,60 @@ Function Start-PipeServerOrClient
 						(Set-PipeSecurity -AccessIdentifier $ServerClientParams.AccessIdentifier)
 					)
 				}
+				# 0.11 hardening (4.1b): apply a Medium mandatory integrity label to the DATA pipe so a
+				# LOW-integrity process cannot connect. Post-create, needs no privilege, graceful (never
+				# fails creation - returns $false and the DACL-only pipe stands). See Set-PipeIntegrityLabel.
+				$null = Set-PipeIntegrityLabel -Pipe $ServerClientParams.$StrPipeInfo.$StrPipe
+				# 0.11 hardening (4.5 step 1a): server diagnostics log. Buffer milestones; flush on failure, discard a clean exit unless InfoDisplay bit 8.
+				$Private:EverConnected    = $false
+				$Script:ServerLogBuffer   = [System.Collections.Generic.List[string]]::new()
+				$Script:ServerLogSaved    = $false
+				$Script:NonceRejectCount  = 0
+				Add-ServerLogEntry -Message ('data pipe created: {0}' -f $ServerClientParams.$StrPipeInfo.$StrName)
+				$null = Remove-OldServerLog -RetentionDays $ServerClientParams.$StrLogRetentionDays
+				# 0.11 hardening (4.5 step 1d): self-provision the Event Log source when THIS server is elevated, so a
+				# git-cloned module (never run through Deploy-Modules) still gets the failure-pointer source. Idempotent;
+				# needs admin to CREATE (hence the $Administrator gate) - writing to it later needs none.
+				if ($Administrator) { $null = Register-PipeEventSource }
+
+				# 0.11 hardening (4.3): first-connect deadline budget (from pipe creation) + PowerShell.Exiting teardown.
+				$Private:FirstConnectDeadlineMs = [int]$ServerClientParams.$StrClientConnectTimeout + 2000
+				$Private:FirstConnectSw         = [System.Diagnostics.Stopwatch]::StartNew()
+				# Belt-and-braces: dispose the pipe on an abnormal engine exit (the Finally covers normal exits and the OS
+				# closes the handle on process exit; this is defence in depth). Closure captures the pipe reference.
+				$Private:PipeForExit = $ServerClientParams.$StrPipeInfo.$StrPipe
+				$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action ({
+					try { if ($PipeForExit) { $PipeForExit.Dispose() } } catch { $null = $_ }
+				}.GetNewClosure())
+				# 0.12 PID hand-off: state + P/Invoke to read a connecting client's real (kernel-set) PID.
+				$Private:ExpectedHandinPid = [uint32]0
+				if (-not ('NamedPipe.PidQuery' -as [type]))
+				{
+					Add-Type -Namespace 'NamedPipe' -Name 'PidQuery' -MemberDefinition '[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)] public static extern bool GetNamedPipeClientProcessId(System.IntPtr Pipe, out uint ClientProcessId);' -ErrorAction SilentlyContinue
+				}
 				$Private:ExitRequested = $false
 				While (-not $Private:ExitRequested)
 				{
-					$timeout = [timespan]::FromSeconds($ServerClientParams.$StrServerWaitTimeout)
+					If (-not $Private:EverConnected)
+					{
+						# First-connect phase (4.3): an OVERALL budget (~ClientConnectTimeout, measured from pipe creation) for a
+						# FIRST nonce-validated client. A wrong-nonce squatter that reconnects does NOT reset it (stopwatch, not
+						# per-wait), so an unclaimed elevated server dies in ~ClientConnectTimeout, not the 60s re-listen window.
+						$Private:RemainingMs = $Private:FirstConnectDeadlineMs - $Private:FirstConnectSw.ElapsedMilliseconds
+						If ($Private:RemainingMs -le 0)
+						{
+							Add-ServerLogEntry -Message ('no validated client within the {0}ms first-connect deadline - self-terminating' -f $Private:FirstConnectDeadlineMs)
+							$null = Save-ServerLog -Outcome 'timed-out-unclaimed' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName
+							$Private:ExitRequested = $true
+							break
+						}
+						$timeout = [timespan]::FromMilliseconds([double]$Private:RemainingMs)
+					}
+					Else
+					{
+						# Re-listen phase (after a validated session): wait the configurable re-listen window.
+						$timeout = [timespan]::FromSeconds($ServerClientParams.$StrServerWaitTimeout)
+					}
 					$source = [Threading.CancellationTokenSource]::new($timeout)
 					$conn = $ServerClientParams.$StrPipeInfo.$StrPipe.WaitForConnectionAsync($source.token)
 					do
@@ -211,6 +261,8 @@ Function Start-PipeServerOrClient
 					If ($conn.IsCanceled -or $conn.IsFaulted -or -not $ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected)
 					{
 						# Timed out or faulted - no new client arrived, stop re-listening
+						Add-ServerLogEntry -Message ('no connection within {0}s wait' -f $ServerClientParams.$StrServerWaitTimeout)
+						$null = Save-ServerLog -Outcome $(If ($Private:EverConnected) { 'relisten-timeout' } Else { 'timed-out-unclaimed' }) -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName
 						$Private:ExitRequested = $true
 						break
 					}
@@ -234,6 +286,67 @@ Function Start-PipeServerOrClient
 				$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
 				$ServerClientParams.$StrPipeInfo.$StrChunkSize = $ServerClientParams.$StrChunkSize
 				$ServerClientParams.$StrPipeInfo.$StrDepth = $ServerClientParams.$StrDepth
+				# === 0.11 hardening (4.2): capability-nonce handshake ===
+				# The client's FIRST line on a fresh connection must equal the nonce handed to this
+				# server at spawn. This gates admission WITHOUT pinning to a PID, so the VHDTools
+				# GUI->terminal hand-off (a DIFFERENT process presenting the same nonce) still works.
+				# Wrong or absent first line -> reject and re-listen (same teardown as a Disconnect).
+				# No nonce configured (older caller) -> skip the check for backward compatibility.
+				If ($ServerClientParams.$StrNonce)
+				{
+					$Private:PresentedNonce = $null
+					Try
+					{
+						$Private:NonceReadTask = $ServerClientParams.$StrPipeInfo.$StrReader.ReadLineAsync()
+						If ($Private:NonceReadTask.Wait([int]$ServerClientParams.$StrClientConnectTimeout))
+						{$Private:PresentedNonce = $Private:NonceReadTask.Result}
+					}
+					Catch
+					{$Private:PresentedNonce = $null}
+					$Private:_admit = $false
+					If ($Private:PresentedNonce -eq $StrHandinMarker)
+					{
+						# 0.12 PID hand-off: a reconnecting terminal claims a hand-off. Admit ONLY if the authenticated client
+						# armed an expected PID (via a Handoff request) and the kernel-reported connecting PID matches; then hand
+						# it the nonce over this PID-verified channel so it becomes a normal client.
+						If ($Private:ExpectedHandinPid -ne 0)
+						{
+							$Private:_connPid = [uint32]0
+							Try { [void][NamedPipe.PidQuery]::GetNamedPipeClientProcessId($ServerClientParams.$StrPipeInfo.$StrPipe.SafePipeHandle.DangerousGetHandle(), [ref]$Private:_connPid) } Catch { $Private:_connPid = [uint32]0 }
+							If ($Private:_connPid -ne 0 -and $Private:_connPid -eq $Private:ExpectedHandinPid)
+							{
+								$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($ServerClientParams.$StrNonce)
+								$Private:ExpectedHandinPid = [uint32]0
+								$Private:_admit = $true
+								Add-ServerLogEntry -Message ('hand-in accepted from PID {0}' -f $Private:_connPid)
+								If ($ServerClientParams.$StrInfoDisplay -band 4)
+								{Write-Host ('DEBUG SERVER: hand-in accepted from PID {0}' -f $Private:_connPid) -ForegroundColor Green}
+							}
+						}
+					}
+					ElseIf ($Private:PresentedNonce -eq $ServerClientParams.$StrNonce)
+					{
+						$Private:_admit = $true
+						If ($ServerClientParams.$StrInfoDisplay -band 4)
+						{Write-Host 'DEBUG SERVER: nonce accepted' -ForegroundColor Green}
+					}
+					If (-not $Private:_admit)
+					{
+						If ($ServerClientParams.$StrInfoDisplay -band 4)
+						{Write-Host 'DEBUG SERVER: connection rejected (bad nonce / hand-in) - re-listening' -ForegroundColor Red}
+						try { $ServerClientParams.$StrPipeInfo.$StrReader.Dispose() } catch { $null = $_ }
+						try { $ServerClientParams.$StrPipeInfo.$StrWriter.Dispose() } catch { $null = $_ }
+						$ServerClientParams.$StrPipeInfo.$StrReader = $null
+						$ServerClientParams.$StrPipeInfo.$StrWriter = $null
+						try { $ServerClientParams.$StrPipeInfo.$StrPipe.Disconnect() } catch { $null = $_ }
+						$Script:NonceRejectCount++
+						Add-ServerLogEntry -Message 'connection rejected: wrong nonce or failed hand-in'
+						Continue
+					}
+				}
+				# === End capability-nonce handshake ===
+				$Private:EverConnected = $true
+				Add-ServerLogEntry -Message 'client connected and validated'
 				Function Stop-HealthPipe
 				{
 					[CmdletBinding(PositionalBinding = $False)]
@@ -309,8 +422,11 @@ Function Start-PipeServerOrClient
 							param($hpn, $acc, $psVer, $Cts)
 							# Build pipe security inside the runspace from the AccessIdentifier string
 							# array. Building here avoids cross-runspace PipeSecurity object issues.
-							# Falls back to INTERACTIVE SID (S-1-5-4) when $acc is empty, ensuring
-							# a non-elevated caller can always health-check an elevated server.
+							# 0.10 (hardening 4.1a): the empty-$acc fallback grants the CURRENT USER's own
+							# SID, NEVER the Interactive SID (S-1-5-4 = ANY interactive user). The launching
+							# user (same user as the client) can still health-check the elevated server; no
+							# other interactive user can. In practice $acc is never empty - HealthAccess
+							# always appends the current identity - so this is a defence-in-depth tighten.
 							$sec = $null
 							try
 							{
@@ -328,9 +444,8 @@ Function Start-PipeServerOrClient
 								}
 								else
 								{
-									$iSid = [System.Security.Principal.SecurityIdentifier]::new(
-									[System.Security.Principal.WellKnownSidType]::InteractiveSid, $null)
-									$sec.AddAccessRule([System.IO.Pipes.PipeAccessRule]::new($iSid, 'ReadWrite', 'Allow'))
+									$ownSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+									$sec.AddAccessRule([System.IO.Pipes.PipeAccessRule]::new($ownSid, 'ReadWrite', 'Allow'))
 								}
 							}
 							catch { $sec = $null }
@@ -501,6 +616,18 @@ Function Start-PipeServerOrClient
 									If ($ServerClientParams.$StrInfoDisplay -band 4)
 									{Write-Host 'DEBUG SERVER: Disconnect acknowledged' -ForegroundColor Green}
 								}
+								$StrHandoff
+								{
+									# 0.12 PID hand-off: the authenticated client ARMs the server with the PID that will present the next
+									# hand-in (PID in $StrRequest). Only reachable on an already-authenticated connection.
+									$Private:_hp = [uint32]0
+									If ([uint32]::TryParse([string]$DataObject.$StrRequest, [ref]$Private:_hp)) { $Private:ExpectedHandinPid = $Private:_hp }
+									$DataObject.$StrRequest = $DataObject.$StrType
+									$DataObject.$StrResult = ('Armed hand-off for PID {0}' -f $Private:ExpectedHandinPid)
+									Add-ServerLogEntry -Message ('hand-off armed for PID {0}' -f $Private:ExpectedHandinPid)
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host ('DEBUG SERVER: armed hand-off for PID {0}' -f $Private:ExpectedHandinPid) -ForegroundColor Magenta}
+								}
 							}
 						}
 						catch
@@ -546,15 +673,16 @@ Function Start-PipeServerOrClient
 						try { $ServerClientParams.$StrPipeInfo.$StrPipe.Disconnect() } catch { $null = $_ }
 					}
 				} # End re-listen While
+				if (-not $Script:ServerLogSaved) { $null = Save-ServerLog -Outcome 'exit-pipe' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
 				If ($ServerClientParams.Wait)
 					{
-						Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set
+						$null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore
 						Pause
 					}
 				}
 				Catch
 				{
-					If ($DataObject.$StrServerPID) { Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set }
+					If ($DataObject.$StrServerPID) { $null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore }
 					$Private:ErrorMsg = $_.Exception.Message
 					$Private:StackTrace = $_.ScriptStackTrace
 					$Private:FullError = NamedPipe\Get-MyErrors -Return
@@ -568,25 +696,17 @@ Function Start-PipeServerOrClient
 
 					$Private:CatchMsg = "Pipe Server Exception`nMessage: $Private:ErrorMsg`nStack: $Private:RedactedTrace`nDetails: $Private:RedactedError"
 
-					try
-					{
-						$Private:LogDir = Join-Path $env:APPDATA 'NamedPipe-Logs'
-						if (-not (Test-Path $Private:LogDir)) { New-Item -ItemType Directory -Path $Private:LogDir -Force | Out-Null }
-						$Private:LogFile = Join-Path $Private:LogDir "server-error-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
-						$Private:CatchMsg | Out-File -FilePath $Private:LogFile -Encoding UTF8 -ErrorAction Stop
-						Write-Host "Server error logged to: $Private:LogFile" -ForegroundColor Yellow
-					}
-					catch
-					{
-						Write-Host "Could not write error log: $_" -ForegroundColor DarkYellow
-					}
+					Add-ServerLogEntry -Message $Private:CatchMsg
+					$Private:LogFile = Save-ServerLog -Outcome 'crashed' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName
+					if ($Private:LogFile) { Write-Host "Server error logged to: $Private:LogFile" -ForegroundColor Yellow }
 
 					Write-Host "Pipe Server crashed: $Private:ErrorMsg" -ForegroundColor Red
 					Write-Host "(Use path-redacted stack trace - check logs for details)" -ForegroundColor DarkGray
-					Pause
+					If ($ServerClientParams.Wait) { Pause }
 				}
 				Finally
 				{
+					if (-not $Script:ServerLogSaved) { $null = Save-ServerLog -Outcome 'unknown-exit' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
 					# Only stop if not already stopped in the re-listen Else branch
 					If ($HealthRunspace)
 					{
@@ -642,6 +762,24 @@ Function Start-PipeServerOrClient
 				$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
 				$ServerClientParams.$StrPipeInfo.$StrChunkSize = $ServerClientParams.$StrChunkSize
 				$ServerClientParams.$StrPipeInfo.$StrDepth = $ServerClientParams.$StrDepth
+				# 0.11 hardening (4.2): present the capability nonce as the FIRST line so the server admits us.
+				# A hand-off client (different PID) presenting the same nonce is admitted too.
+				If ($ServerClientParams.$StrHandin)
+				{
+					# 0.12 PID hand-off: send the HANDIN marker, then READ the nonce the server returns after verifying our
+					# PID, and store it so this client is normal for any later reconnect.
+					$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($StrHandinMarker)
+					Try
+					{
+						$Private:_hnTask = $ServerClientParams.$StrPipeInfo.$StrReader.ReadLineAsync()
+						If ($Private:_hnTask.Wait([int]$ServerClientParams.$StrClientConnectTimeout))
+						{ $ServerClientParams.$StrNonce = [string]$Private:_hnTask.Result }
+					}
+					Catch { $null = $_ }
+					If (-not $ServerClientParams.$StrNonce) { $ServerClientParams.$StrPipeInfo.$StrError = $True }
+				}
+				ElseIf ($ServerClientParams.$StrNonce)
+				{$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($ServerClientParams.$StrNonce)}
 				If ($ServerClientParams.$StrInfoDisplay -band 4)
 				{Write-Host 'DEBUG CLIENT: StreamReader/Writer created successfully' -ForegroundColor Green}
 			}

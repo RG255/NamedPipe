@@ -39,9 +39,9 @@ Describe 'Module Import' {
         Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
     }
 
-    It 'Should be version 0.9' {
+    It 'Should be version 0.12' {
         $Module = Get-Module -Name NamedPipe
-        $Module.Version.ToString() | Should -Be '0.9'
+        $Module.Version.ToString() | Should -Be '0.12'
     }
 
     It 'Should have a valid module version' {
@@ -53,7 +53,8 @@ Describe 'Module Import' {
         $Module = Get-Module -Name NamedPipe
         $Module.ExportedFunctions.Keys | Should -Contain 'ConvertTo-Serial'
         $Module.ExportedFunctions.Keys | Should -Contain 'ConvertFrom-Serial'
-        $Module.ExportedFunctions.Keys | Should -Contain 'Set-Window'
+        # Set-Window was removed in 0.12 (NamedPipe only did hide/restore -> Set-MyWindowState); it must NOT be exported.
+        $Module.ExportedFunctions.Keys | Should -Not -Contain 'Set-Window'
         $Module.ExportedFunctions.Keys | Should -Contain 'Start-PipeSession'
         $Module.ExportedFunctions.Keys | Should -Contain 'Test-PipeSession'
         $Module.ExportedFunctions.Keys | Should -Contain 'Stop-PipeSession'
@@ -547,97 +548,27 @@ Describe 'Set-ObjectParams' {
     }
 }
 
-Describe 'Publish-SetWindowCode' {
-    Context 'Window Class Compilation' {
-        It 'Should compile the Window class without errors' {
-            { Publish-SetWindowCode } | Should -Not -Throw
+Describe 'Set-MyWindowState' {
+    # Set-MyWindowState is the lightweight ShowWindow-based hide/restore helper that replaced Set-Window
+    # (VENDORED from CommonScripts, internal). It never throws and returns $true only when it found a
+    # top-level window to act on - which a non-interactive/ConPTY-hosted test host generally does NOT have,
+    # so we assert the "no throw + boolean" contract rather than a specific true/false.
+    Context 'State toggling' {
+        It 'Should not throw for a valid process id' {
+            { Set-MyWindowState -ProcessId $PID -State Restore } | Should -Not -Throw
         }
 
-        It 'Should create the Window type' {
-            Publish-SetWindowCode
-            [Window] | Should -Not -BeNullOrEmpty
+        It 'Should return a boolean' {
+            $Result = Set-MyWindowState -ProcessId $PID -State Minimize
+            $Result | Should -BeOfType [bool]
         }
 
-        It 'Should create the Window type with all required methods' {
-            Publish-SetWindowCode
-            $Methods = [Window].GetMethods().Name | Sort-Object -Unique
-            $Methods | Should -Contain 'FindWindow'
-            $Methods | Should -Contain 'FindWindowEx'
-            $Methods | Should -Contain 'MoveWindow'
-            $Methods | Should -Contain 'ShowWindow'
-            $Methods | Should -Contain 'GetWindowInfo'
-            $Methods | Should -Contain 'SetForegroundWindow'
+        It 'Should return $false (no window to act on) for a non-existent process id' {
+            Set-MyWindowState -ProcessId 999999999 -State Restore | Should -BeFalse
         }
 
-        It 'Should have FindWindow method' {
-            Publish-SetWindowCode
-            $Methods = [Window].GetMethods().Name
-            $Methods | Should -Contain 'FindWindow'
-        }
-
-        It 'Should have MoveWindow method' {
-            Publish-SetWindowCode
-            $Methods = [Window].GetMethods().Name
-            $Methods | Should -Contain 'MoveWindow'
-        }
-
-        It 'Should have ShowWindow method' {
-            Publish-SetWindowCode
-            $Methods = [Window].GetMethods().Name
-            $Methods | Should -Contain 'ShowWindow'
-        }
-
-        It 'Should have GetWindowInfo method' {
-            Publish-SetWindowCode
-            $Methods = [Window].GetMethods().Name
-            $Methods | Should -Contain 'GetWindowInfo'
-        }
-    }
-}
-
-Describe 'Set-Window' {
-    BeforeAll {
-        Publish-SetWindowCode
-    }
-
-    Context 'Window Information Retrieval' {
-        It 'Should get current process window info' {
-            $Result = Set-Window -ProcessId $PID -Passthru
-            $Result | Should -Not -BeNullOrEmpty
-            $Result.ProcessID | Should -Be $PID
-        }
-
-        It 'Should return dimensions (may be zero in non-interactive)' {
-            $Result = Set-Window -ProcessId $PID -Passthru
-            # In non-interactive consoles, dimensions may be 0
-            $Result.WindowWidth | Should -BeGreaterOrEqual 0
-            $Result.WindowHeight | Should -BeGreaterOrEqual 0
-        }
-
-        It 'Should return screen information' {
-            $Result = Set-Window -ProcessId $PID -Passthru
-            $Result.ScreenWorkingWidth | Should -BeGreaterThan 0
-            $Result.ScreenWorkingHeight | Should -BeGreaterThan 0
-        }
-
-        It 'Should include character dimensions with -Characters' {
-            $Result = Set-Window -ProcessId $PID -Passthru -Characters
-            # Only check if this is a console window with valid font info
-            if ($Result.IsConsole -and $Result.FontSizeWidth -gt 0) {
-                $Result.CharactersWide | Should -BeGreaterThan 0
-                $Result.CharactersHigh | Should -BeGreaterThan 0
-            } else {
-                # Non-interactive or no font info - just check values exist
-                $Result.CharactersWide | Should -BeGreaterOrEqual 0
-                $Result.CharactersHigh | Should -BeGreaterOrEqual 0
-            }
-        }
-    }
-
-    Context 'Parameter Validation' {
-        It 'Should reject invalid ProcessId' {
-            $Result = Set-Window -ProcessId 999999999 -Passthru
-            $Result.LastErrorValue | Should -Not -Be 0
+        It 'Should reject an invalid State value' {
+            { Set-MyWindowState -ProcessId $PID -State Wobble } | Should -Throw
         }
     }
 }
@@ -1081,9 +1012,9 @@ Describe 'FunctionExportTable' -Tag 'ExportTable' {
             $Module.ExportedFunctions.Keys | Should -Not -Contain 'Get-SBResult'
         }
 
-        It 'Publish-SetWindowCode should not be exported' {
+        It 'Set-MyWindowState should not be exported (vendored internal)' {
             $Module = Get-Module -Name NamedPipe
-            $Module.ExportedFunctions.Keys | Should -Not -Contain 'Publish-SetWindowCode'
+            $Module.ExportedFunctions.Keys | Should -Not -Contain 'Set-MyWindowState'
         }
     }
 
@@ -1206,9 +1137,9 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
         $Default.Name | Should -Be 'NamedPipe'
     }
 
-    It 'Should have Version set to 0.9' {
+    It 'Should have Version set to 0.12' {
         $Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-        $Default.Version | Should -Be '0.9'
+        $Default.Version | Should -Be '0.12'
     }
 }
 

@@ -164,7 +164,7 @@ Function Receive-Data
 		}
 		else
 		{
-			Set-Window -ProcessId $DataObject.$StrServerPID -State Restore -Set
+			$null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore
 			$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
 		}
 	}
