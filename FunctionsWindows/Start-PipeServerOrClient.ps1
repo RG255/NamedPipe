@@ -204,6 +204,17 @@ Function Start-PipeServerOrClient
 				$Private:EverConnected    = $false
 				$Script:ServerLogBuffer   = [System.Collections.Generic.List[string]]::new()
 				$Script:ServerLogSaved    = $false
+				# Separate from ServerLogSaved, which means "a log FILE has been written" and is what makes
+				# Save-ServerLog idempotent. This one means "this exit has been ACCOUNTED FOR": a clean exit
+				# that was deliberately DISCARDED (the common path, bit 8 off) is accounted for even though
+				# no file exists. The Finally's unknown-exit fallback guards on THIS.
+				#
+				# The two used to be one flag, which worked only by accident - the discarded clean exit set
+				# ServerLogSaved and so suppressed the Finally. When 0.13 stopped it claiming the flag (so a
+				# crash AFTER a discarded clean exit could still log, which was the real defect), the Finally
+				# began firing 'unknown-exit' on EVERY clean run; that outcome counts as a failure, so every
+				# ordinary run wrote a log. Caught 2026-08-13 by Tests\Test-ServerLogE2E.ps1.
+				$Script:ServerExitAccounted = $false
 				$Script:NonceRejectCount  = 0
 				Add-ServerLogEntry -Message ('data pipe created: {0}' -f $ServerClientParams.$StrPipeInfo.$StrName)
 				$null = Remove-OldServerLog -RetentionDays $ServerClientParams.$StrLogRetentionDays
@@ -673,7 +684,10 @@ Function Start-PipeServerOrClient
 						try { $ServerClientParams.$StrPipeInfo.$StrPipe.Disconnect() } catch { $null = $_ }
 					}
 				} # End re-listen While
+				# Clean exit. Mark it accounted for whether or not a file was actually written, so the
+				# Finally below does not then report the same exit as 'unknown-exit'.
 				if (-not $Script:ServerLogSaved) { $null = Save-ServerLog -Outcome 'exit-pipe' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
+				$Script:ServerExitAccounted = $true
 				If ($ServerClientParams.Wait)
 					{
 						$null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore
@@ -706,7 +720,12 @@ Function Start-PipeServerOrClient
 				}
 				Finally
 				{
-					if (-not $Script:ServerLogSaved) { $null = Save-ServerLog -Outcome 'unknown-exit' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
+					# Last-resort fallback: only for an exit NOTHING else accounted for. Guarding on
+					# ServerExitAccounted (not ServerLogSaved) is what keeps a discarded clean exit from
+					# being reported here as 'unknown-exit' - a failure outcome, which would write a log
+					# on every ordinary run. The crash path sets ServerLogSaved, so it is covered too.
+					if (-not $Script:ServerLogSaved -and -not $Script:ServerExitAccounted)
+					{ $null = Save-ServerLog -Outcome 'unknown-exit' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
 					# Only stop if not already stopped in the re-listen Else branch
 					If ($HealthRunspace)
 					{
