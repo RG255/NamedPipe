@@ -1,4 +1,4 @@
-Function Get-SBResult
+﻿Function Get-SBResult
 {
 	<#
 		.SYNOPSIS
@@ -127,6 +127,12 @@ Function Get-SBResult
 			}
 			Send-ProgressInfo -Type Console -String ('[Server] Executing: {0}' -f $Private:DisplayStr)
 		}
+		# NOTE 2026-08-08: two changes were tried here and REVERTED after they coincided with an elevated
+		# server dying mid-request ("Pipe is broken" at the client, no server log written): an $Error.Clear()
+		# before the invoke, and an "if ($Error.Count -gt 0) populate $DataObject.Error" after it. Neither is
+		# needed for correctness - the non-terminating case they targeted does not reach $Error at all (see
+		# memory todo_global.md, PARKED entry). Do NOT reintroduce them without isolating that crash first;
+		# this file runs inside the elevated server for EVERY consumer.
 		$ErrorActionPreference = 'Stop'
 		$DataObject.$StrResult = $Private:SB.InvokeReturnAsIs()
 

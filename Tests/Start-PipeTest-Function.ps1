@@ -1,4 +1,4 @@
-#!/usr/bin/env powershell
+﻿#!/usr/bin/env powershell
 #requires -Version 5.0
 Function Start-PipeTest
 {
@@ -30,8 +30,8 @@ Function Start-PipeTest
 	)
 
 	Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-	# 0.10: use the DEPLOYED 0.10 by name+version (the spawned server re-resolves the module and the
-	# source dev folder is not on PSModulePath, which caused connect timeouts). Deploy 0.10 first.
+	# Use the DEPLOYED 0.12 by name+version (the spawned server re-resolves the module and the
+	# source dev folder is not on PSModulePath, which caused connect timeouts). Deploy 0.12 first.
 	Import-Module -Name NamedPipe -Force -RequiredVersion 0.12
 	function Invoke-RequiredActions
 	{

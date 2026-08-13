@@ -1,4 +1,4 @@
-# VENDORED from CommonScripts\0.2\Functions\Get-MyErrors.ps1 by Sync-SharedUtilities - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Get-MyErrors.ps1 by Sync-SharedUtilities [SHA256 AE483C09CC43C1D100EDA69C84C823044B03C6587343FF52001BBB6ED25CAEBA] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Get-MyErrors
 {
 	<#
@@ -13,9 +13,6 @@ Function Get-MyErrors
 
 		By default, clears $Global:Error after processing. Use -PreserveErrors to
 		keep the error collection intact.
-
-		.PARAMETER LinePad
-		Padding width for formatting output lines. Default: 5.
 
 		.PARAMETER Indent
 		Indentation level for error details. Default: 5.

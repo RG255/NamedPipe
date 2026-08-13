@@ -1,4 +1,4 @@
-#!/usr/bin/env powershell
+﻿#!/usr/bin/env powershell
 #requires -Version 5.0
 [CmdletBinding()]
 Param (
@@ -30,9 +30,9 @@ Param (
 )
 
 Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-# 0.10: use the DEPLOYED 0.10 by name+version. Loading source by path timed out because the spawned
-# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.10
-# (side-by-side; consumers still pin 0.9) and re-deploy after each source change before testing.
+# Use the DEPLOYED 0.12 by name+version. Loading source by path timed out because the spawned
+# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.12
+# (side-by-side) and re-deploy after each source change before testing.
 Import-Module -Name NamedPipe -Force -RequiredVersion 0.12
 function Invoke-RequiredActions
 {

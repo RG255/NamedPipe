@@ -1,4 +1,4 @@
-# Debug script to check variable creation
+﻿# Debug script to check variable creation
 Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
 
 # Check variables before module load
@@ -7,7 +7,7 @@ Write-Host "StrSecurity exists: $(Test-Path Variable:StrSecurity)"
 Write-Host "StrScriptBlock exists: $(Test-Path Variable:StrScriptBlock)"
 Write-Host "StrType exists: $(Test-Path Variable:StrType)"
 
-# Load the module - DEPLOYED 0.10 by name+version (deploy 0.10 first)
+# Load the module - DEPLOYED 0.12 by name+version (deploy 0.12 first)
 Import-Module NamedPipe -RequiredVersion 0.12
 
 # Check variables after module load

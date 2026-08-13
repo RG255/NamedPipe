@@ -1,5 +1,5 @@
-
-#Requires -Module Pester
+﻿
+#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
 <#
 .SYNOPSIS
 Pester tests for NamedPipe v0.9 security fixes
