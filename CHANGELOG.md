@@ -1,5 +1,37 @@
 # NamedPipe Changelog
 
+## Version 0.13 - 2026-08-13 (branched 2026-08-11)
+
+### Fixes - server-side errors reaching the client
+
+- **A scriptblock that FAILED on the elevated server could return to the caller looking like a
+  success.** `Get-SBResult` invoked the caller's scriptblock with only its own local
+  `$ErrorActionPreference` set to `Stop`. A module function resolves that preference from the
+  **global** scope, never from its caller, so the local setting had no effect on code running inside
+  the invoked block: anything that failed *non-terminatingly* wrote to the error stream and carried
+  on, and the client received a partial or empty result with `$StrError` empty. The caller had no
+  way to tell a completed operation from a failed one.
+  `Get-SBResult` now sets **both** the local and the global preference to `Stop` before invoking, and
+  restores the previous global value in a `Finally`.
+- **`Save-ServerLog` set its "a log was written" flag unconditionally**, including on the path where
+  no log was written. That flag suppresses later diagnostics, so the failure it should have reported
+  was the exact case it silenced. The flag is now set only when a log is actually written.
+
+### Verification
+
+- Proven against all four consumers doing real work, not just the headless harness: VHDTools VHD
+  builds, two unattended Macrium production backups, VaultTools, and the ConfigureDefender GUI.
+- Module suite 159 passed / 0 failed / 1 skipped. Regression coverage for the specific defect lives
+  outside this repo (it needs a consumer and a UAC prompt): `Test-PipeErrorPropagation.ps1` pins the
+  symptom and `Test-PipeServerErrorCount.ps1` the cause - the server reporting `BEFORE=0 AFTER=0
+  EAP=Stop` while an error had in fact occurred.
+
+### Notes
+
+- 0.12 is frozen; its history is contained in this line. Consumers pinning `RequiredVersion = '0.12'`
+  keep working unchanged - repin to 0.13 to pick up the fix, since the whole point is that a failure
+  which used to be invisible now surfaces.
+
 ## Version 0.12 - 2026-07-31 (branched 2026-07-21)
 
 ### Fixes - crash-log path redaction (security review 2026-07-31)
