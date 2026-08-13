@@ -1,4 +1,11 @@
-﻿# Regression test for 0.11 item 4.1b - the pipe mandatory integrity label (Set-PipeIntegrityLabel).
+﻿#requires -Version 7.0
+#
+# PS7 ONLY (the PARENT). [System.IO.Pipes.NamedPipeServerStreamAcl] is .NET Core only, so under
+# Windows PowerShell 5.1 this failed with "Unable to find type" - which reads like a broken test
+# rather than the wrong host. The #requires makes 5.1 skip it with a clear reason instead. The
+# CHILD processes deliberately run under 5.1; see the note in Test-ChildAt.
+#
+# Regression test for 0.11 item 4.1b - the pipe mandatory integrity label (Set-PipeIntegrityLabel).
 #
 # Proves the SHIPPED module function labels a pipe such that a genuine LOW-integrity client is refused
 # while a Medium client connects. Same user + same DACL for both children, so ONLY the integrity label
@@ -84,9 +91,23 @@ catch { `$e = `$_.Exception; while (`$e.InnerException) { `$e = `$e.InnerExcepti
 exit (`$ilc*100 + `$rc)
 "@
     $enc  = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($child))
-    $pwsh = Join-Path $PSHOME 'pwsh.exe'
+    # Windows PowerShell 5.1 for the CHILD, deliberately - not $PSHOME\pwsh.exe.
+    #
+    # PowerShell 7 cannot START at Low integrity: it writes to per-user locations during startup that
+    # a Low-IL token cannot reach, so the process died with 0xE0434352 (CLR unhandled exception)
+    # before running a single line. The harness then read IL=[unknown] and connect=[raw=-532462766]
+    # and reported FAIL - which looked like the module's integrity label misbehaving when in fact the
+    # LOW case had never been exercised at all. Diagnosed 2026-08-13.
+    #
+    # The payload above is deliberately version-agnostic (whoami, NamedPipeClientStream, exit code),
+    # so 5.1 runs it unchanged. BOTH children use the same host, so the "same user, same DACL, only
+    # the integrity level differs" property this test rests on still holds.
+    #
+    # The PARENT still requires PS7 - see the #requires at the top - because
+    # NamedPipeServerStreamAcl is .NET Core only.
+    $ChildHost = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $code = -1
-    try { $code = [LowILLauncher]::RunAtIntegrity($pwsh, ('"{0}" -NoProfile -EncodedCommand {1}' -f $pwsh, $enc), $IlSid) }
+    try { $code = [LowILLauncher]::RunAtIntegrity($ChildHost, ('"{0}" -NoProfile -EncodedCommand {1}' -f $ChildHost, $enc), $IlSid) }
     catch { Write-Host ("  {0,-14} LAUNCH FAILED: {1}" -f $Label, $_.Exception.Message) -ForegroundColor Red }
     if ($iar.AsyncWaitHandle.WaitOne(300)) { try { $srv.EndWaitForConnection($iar) } catch {} }
     $srv.Dispose()

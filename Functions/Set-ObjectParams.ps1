@@ -374,14 +374,36 @@
 		}
 		$StrSendRequestParams
 		{
+			# $MyParameters, NOT $ServerClientParams.
+			#
+			# Start-PipeSession builds this dataset with
+			#     Set-ObjectParams -Dataset SendRequestParams -MyParameters $Private:ServerClientParams
+			# so the ServerClientParams hashtable arrives as $MyParameters. This branch used to read a
+			# variable literally named $ServerClientParams, which is NOT a parameter of this function -
+			# it could only ever resolve by dynamic scope to the CALLER's variable, and the caller's is
+			# $Private:ServerClientParams, which child scopes cannot see. So it resolved to nothing and
+			# BOTH fields below silently took their Else branch, every time.
+			#
+			# Measured 2026-08-13 by calling this builder directly with sentinels:
+			#   NoExitOnError = $true            -> came back False
+			#   PipeInfo      = 'SENTINEL'       -> came back $null
+			#
+			# It hid because neither loss was fatal: Start-PipeSession reassigns PipeInfo immediately
+			# afterwards, and NoExitOnError only controls whether Send-Request echoes the error text via
+			# Write-Information - the DataObject is returned to the caller either way. The visible effect
+			# was that the option could not be set through the session Options at all, which sent
+			# consumers (ConfigureDefender) to setting the key on the hashtable by hand.
+			#
+			# The sibling branches at the ServerClientParams and MyOptions datasets already read
+			# $MyParameters / $MyOptions correctly - this was the odd one out.
 			[Ordered]@{
 				$Strtype = $StrScriptBlock
-				$StrNoExitOnError = if ($ServerClientParams.$StrNoExitOnError)
+				$StrNoExitOnError = if ($MyParameters.$StrNoExitOnError)
 				{$True}
 				Else
 				{$False}
-				$StrPipeInfo = if ($ServerClientParams.$StrPipeInfo)
-				{$ServerClientParams.$StrPipeInfo}
+				$StrPipeInfo = if ($MyParameters.$StrPipeInfo)
+				{$MyParameters.$StrPipeInfo}
 				Else
 				{$Null}
 				$StrDataObject = Set-ObjectParams -Dataset $StrDataObject
