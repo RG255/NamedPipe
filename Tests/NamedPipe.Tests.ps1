@@ -16,13 +16,31 @@
 #>
 
 BeforeAll {
-    # Export all functions (including internal) for testing
+    # NAMEDPIPE_EXPORT_ALL makes InitialiseModule.psm1 export every function, BUT the manifest's
+    # explicit 23-entry FunctionsToExport is the FINAL gate - importing via the .psd1 filters the
+    # surface straight back down. So this env var has never actually widened anything here, and
+    # ~13 tests were calling internals that were not in scope. Kept because it is harmless and the
+    # psm1 still honours it if the module is ever imported directly.
     $env:NAMEDPIPE_EXPORT_ALL = '1'
 
     # Import the module
     $ModulePath = Split-Path -Parent $PSScriptRoot
     Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
     Import-Module "$ModulePath\NamedPipe.psd1" -Force
+
+    # Reach the INTERNAL (deliberately unexported) functions the proper way: run them inside the
+    # module's own scope, where their $Str*/$script: dependencies resolve. Dot-sourcing the files
+    # into the test scope would NOT work - they would lose that scope.
+    #
+    # This keeps the suite self-consistent: the "should NOT be exported" assertions further down
+    # stay true, and these functions are still exercised. Set-Window is deliberately absent - it
+    # was removed in 0.12.
+    foreach ($Private:Fn in 'Get-NewPipeName', 'Test-UserOrGroupExists', 'Set-MyWindowState',
+                            'Assert-File', 'Assert-Folder')
+    {
+        $Private:Body = '& (Get-Module NamedPipe) ([scriptblock]::Create(''{0} @args'')) @args' -f $Private:Fn
+        Set-Item -Path ('function:script:{0}' -f $Private:Fn) -Value ([scriptblock]::Create($Private:Body))
+    }
 
     # Store original error count for cleanup
     $Script:OriginalErrorCount = $Global:Error.Count
@@ -39,9 +57,9 @@ Describe 'Module Import' {
         Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
     }
 
-    It 'Should be version 0.12' {
+    It 'Should be version 0.13' {
         $Module = Get-Module -Name NamedPipe
-        $Module.Version.ToString() | Should -Be '0.12'
+        $Module.Version.ToString() | Should -Be '0.13'
     }
 
     It 'Should have a valid module version' {
@@ -493,9 +511,14 @@ Describe 'Get-MyErrors' {
             { Get-MyErrors -Return -Indent 10 } | Should -Not -Throw
         }
 
-        It 'Should accept custom LinePad parameter' {
+        # -LinePad does NOT exist on Get-MyErrors (params are Indent/Return/PreserveErrors/
+        # PathToLogFile) and this test asserted it did not throw, so it failed permanently.
+        # The function's comment-based help still documents a .PARAMETER LinePad - that help is
+        # stale in the CommonScripts master too. Assert the real contract instead: an unknown
+        # parameter MUST be rejected.
+        It 'Should reject a parameter it does not have' {
             try { Get-Item 'C:\NonExistent\Path\File.txt' -ErrorAction Stop } catch {}
-            { Get-MyErrors -Return -LinePad 10 } | Should -Not -Throw
+            { Get-MyErrors -Return -LinePad 10 } | Should -Throw
         }
     }
 }
@@ -639,21 +662,26 @@ Describe 'Assert-File' {
     }
 
     Context 'File Testing' {
-        # Assert-File returns PSCustomObject with Success property
-        It 'Should return Success=false for non-existent file' {
+        # !! These tests used to assert '$Result.Success', a PSCustomObject contract Assert-File
+        # has NEVER had. Its own help states: "Returns nothing on success; returns an error string
+        # on failure." Verified: every call returns $null while the file IS created, so the tests
+        # failed permanently against a function that works. (The .Success confusion most likely
+        # came from Assert-File's INTERNAL use of Assert-Folder's result, which does have one.)
+        # Asserting the real contract below - and the side effect, which is the point of the call.
+        It 'Should return an error string for a non-existent file' {
             $Result = Assert-File -InputObject 'C:\NonExistent\File.txt' -Option Test
-            $Result.Success | Should -Be $False
+            $Result | Should -Not -BeNullOrEmpty
         }
 
-        It 'Should create a file with Create option' {
+        It 'Should create a file with Create option and return nothing' {
             $Result = Assert-File -InputObject $Script:TestFilePath -Option Create
-            $Result.Success | Should -Be $True
+            $Result | Should -BeNullOrEmpty
             Test-Path $Script:TestFilePath | Should -Be $True
         }
 
-        It 'Should return Success=true for existing file' {
+        It 'Should return nothing for an existing file' {
             $Result = Assert-File -InputObject $Script:TestFilePath -Option Test
-            $Result.Success | Should -Be $True
+            $Result | Should -BeNullOrEmpty
         }
     }
 }
@@ -692,13 +720,17 @@ Describe 'Assert-Folder' {
 Describe 'Send-Data and Receive-Data' -Tag 'Integration' {
     Context 'Send-Data gets ChunkSize and Depth from PipeInfo' {
         It 'Send-Data should not have ChunkSize or Depth parameters' {
-            $Cmd = Get-Command Send-Data
+            # Send-Data is internal (not in FunctionsToExport), so Get-Command cannot see it from
+            # the test scope. Resolve it inside the module, where it exists.
+            $Cmd = & (Get-Module NamedPipe) { Get-Command Send-Data }
             $Cmd.Parameters.Keys | Should -Not -Contain 'ChunkSize'
             $Cmd.Parameters.Keys | Should -Not -Contain 'Depth'
         }
 
         It 'Send-Data should only require DataObject and PipeInfo' {
-            $Cmd = Get-Command Send-Data
+            # Send-Data is internal (not in FunctionsToExport), so Get-Command cannot see it from
+            # the test scope. Resolve it inside the module, where it exists.
+            $Cmd = & (Get-Module NamedPipe) { Get-Command Send-Data }
             $MandatoryParams = $Cmd.Parameters.Values | Where-Object {
                 $_.Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory }
             }
@@ -759,7 +791,11 @@ Describe 'Integration Tests' -Tag 'Integration' {
         }
 
         It 'Should handle file system objects' {
-            $Original = Get-Item $env:TEMP | Select-Object Name, FullName, Attributes
+            # -Force is REQUIRED: %TEMP% carries the Hidden attribute on this machine, and
+            # Get-Item silently refuses hidden items without it, reporting the very misleading
+            # "Could not find item <path>" even though Test-Path and [IO.Directory]::Exists
+            # both return $true. Nothing to do with serialisation - the test never got that far.
+            $Original = Get-Item $env:TEMP -Force | Select-Object Name, FullName, Attributes
             $Serialized = ConvertTo-Serial -Object $Original
             $Result = ConvertFrom-Serial -Text $Serialized
             $Result.Name | Should -Be $Original.Name
@@ -858,7 +894,9 @@ Describe 'Depth Parameter Tests' -Tag 'Depth' {
 
     Context 'Send-Data Parameters' {
         It 'Send-Data should only have DataObject and PipeInfo parameters' {
-            $Cmd = Get-Command Send-Data
+            # Send-Data is internal (not in FunctionsToExport), so Get-Command cannot see it from
+            # the test scope. Resolve it inside the module, where it exists.
+            $Cmd = & (Get-Module NamedPipe) { Get-Command Send-Data }
             $UserParams = $Cmd.Parameters.Keys | Where-Object { $_ -notin [System.Management.Automation.PSCmdlet]::CommonParameters }
             $UserParams | Should -Contain 'DataObject'
             $UserParams | Should -Contain 'PipeInfo'
@@ -1137,9 +1175,9 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
         $Default.Name | Should -Be 'NamedPipe'
     }
 
-    It 'Should have Version set to 0.12' {
+    It 'Should have Version set to 0.13' {
         $Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-        $Default.Version | Should -Be '0.12'
+        $Default.Version | Should -Be '0.13'
     }
 }
 

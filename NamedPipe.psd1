@@ -8,12 +8,12 @@
 
 @{
 	RootModule        = 'InitialiseModule.psm1'
-	ModuleVersion     = '0.12'
+	ModuleVersion     = '0.13'
 	GUID              = 'b2a14d3e-8c7f-4e91-b035-7d2f9a1c4e56'
 	Author            = 'RayG'
 	CompanyName       = 'RayG'
 	Copyright         = '(c) 2024-2026 RayG. All rights reserved.'
-	Description       = 'Creates a named pipe server and client with chunked data transfer support for large objects. v0.12: pipe-injection hardening (default-deny AST request allowlist, medium-integrity pipe label, capability-nonce client auth, connect-deadline auto-teardown) plus leak-proof PID-verified GUI-to-terminal hand-off.'
+	Description       = 'Creates a named pipe server and client with chunked data transfer support for large objects. v0.13: server-side error propagation - a Write-Error raised inside a module function now reaches the client instead of presenting as success; crash diagnostics logging fixed so a crash log is no longer suppressed by an earlier discarded clean-exit. v0.12: pipe-injection hardening (default-deny AST request allowlist, medium-integrity pipe label, capability-nonce client auth, connect-deadline auto-teardown) plus leak-proof PID-verified GUI-to-terminal hand-off.'
 	PowerShellVersion = '5.0'
 	RequiredModules   = @(
 		@{

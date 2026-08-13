@@ -47,12 +47,28 @@
 
 	# Idempotent - first exit path to reach here owns the flush.
 	if ($Script:ServerLogSaved) { return $null }
-	$Script:ServerLogSaved = $true
 
 	$Private:Failure   = $Outcome -in @('crashed', 'timed-out-unclaimed', 'unknown-exit')
 	$Private:KeepClean = [bool]($InfoDisplay -band 8)
 	# Discard a boring clean exit (bit 8 off) - no file, no disk I/O. This is the common path.
+	#
+	# !! 0.13 FIX - the flag used to be set ABOVE this test, i.e. before we knew whether anything
+	# would actually be written. A DISCARDED clean exit therefore claimed ownership of the flush and
+	# permanently suppressed every later call. The real server hits exactly that sequence:
+	# Start-PipeServerOrClient calls Save-ServerLog -Outcome 'exit-pipe' after the re-listen loop
+	# (discarded when bit 8 is off, which is the default), and if anything then throws, the Catch's
+	# Save-ServerLog -Outcome 'crashed' and the Finally's 'unknown-exit' BOTH returned $null.
+	# Net effect: a genuine crash produced NO LOG AT ALL.
+	# Measured 2026-08-11 by exercising the extracted function - crash-alone wrote a log, but
+	# clean-exit-then-crash wrote nothing (with bit 8 on, both wrote, which is why this hid for so long).
+	# Consequence for diagnosis: "no server log was written" is NOT evidence that a server died hard.
+	# The 2026-08-08 investigation into the reverted Get-SBResult changes rests on exactly that
+	# inference - see the note in Get-SBResult.ps1.
+	# The flag is now set ONLY when a log is genuinely written (below), so discarding a clean exit
+	# leaves a later failure free to log.
 	if (-not $Private:Failure -and -not $Private:KeepClean) { return $null }
+
+	$Script:ServerLogSaved = $true
 
 	try
 	{

@@ -102,19 +102,19 @@ $MyVars = [Ordered]@{
 				Value  = 'Handoff'
 				Scope  = $VSScript
 				Option = $VONone
-				Use    = '0.12 PID hand-off: request type the authenticated client sends to ARM the server with the next connection PID (PID in $StrRequest)'
+				Use    = '0.13 PID hand-off: request type the authenticated client sends to ARM the server with the next connection PID (PID in $StrRequest)'
 			}
 			StrHandinMarker       = @{
 				Value  = 'HANDIN'
 				Scope  = $VSScript
 				Option = $VOReadOnly
-				Use    = '0.12 PID hand-off: first-line marker a reconnecting terminal sends (instead of the nonce) to claim a hand-off'
+				Use    = '0.13 PID hand-off: first-line marker a reconnecting terminal sends (instead of the nonce) to claim a hand-off'
 			}
 			StrHandin             = @{
 				Value  = 'Handin'
 				Scope  = $VSScript
 				Option = $VONone
-				Use    = '0.12 PID hand-off: client option - do a HANDIN (send marker, receive the nonce) instead of presenting a nonce'
+				Use    = '0.13 PID hand-off: client option - do a HANDIN (send marker, receive the nonce) instead of presenting a nonce'
 			}
 		StrServer             = @{
 			Value  = 'Server'

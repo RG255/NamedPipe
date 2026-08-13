@@ -34,9 +34,9 @@
 		to use while it is running.
 
 		Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-		Import-Module NamedPipe -RequiredVersion 0.12
+		Import-Module NamedPipe -RequiredVersion 0.13
 
-		Where -RequiredVersion 0.12 is the version of the module to use, there can be multiple
+		Where -RequiredVersion 0.13 is the version of the module to use, there can be multiple
 		versions of the same module as its functionality is improved or expanded.
 #> 
 try

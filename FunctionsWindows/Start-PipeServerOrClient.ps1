@@ -221,7 +221,7 @@ Function Start-PipeServerOrClient
 				$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action ({
 					try { if ($PipeForExit) { $PipeForExit.Dispose() } } catch { $null = $_ }
 				}.GetNewClosure())
-				# 0.12 PID hand-off: state + P/Invoke to read a connecting client's real (kernel-set) PID.
+				# 0.13 PID hand-off: state + P/Invoke to read a connecting client's real (kernel-set) PID.
 				$Private:ExpectedHandinPid = [uint32]0
 				if (-not ('NamedPipe.PidQuery' -as [type]))
 				{
@@ -306,7 +306,7 @@ Function Start-PipeServerOrClient
 					$Private:_admit = $false
 					If ($Private:PresentedNonce -eq $StrHandinMarker)
 					{
-						# 0.12 PID hand-off: a reconnecting terminal claims a hand-off. Admit ONLY if the authenticated client
+						# 0.13 PID hand-off: a reconnecting terminal claims a hand-off. Admit ONLY if the authenticated client
 						# armed an expected PID (via a Handoff request) and the kernel-reported connecting PID matches; then hand
 						# it the nonce over this PID-verified channel so it becomes a normal client.
 						If ($Private:ExpectedHandinPid -ne 0)
@@ -618,7 +618,7 @@ Function Start-PipeServerOrClient
 								}
 								$StrHandoff
 								{
-									# 0.12 PID hand-off: the authenticated client ARMs the server with the PID that will present the next
+									# 0.13 PID hand-off: the authenticated client ARMs the server with the PID that will present the next
 									# hand-in (PID in $StrRequest). Only reachable on an already-authenticated connection.
 									$Private:_hp = [uint32]0
 									If ([uint32]::TryParse([string]$DataObject.$StrRequest, [ref]$Private:_hp)) { $Private:ExpectedHandinPid = $Private:_hp }
@@ -766,7 +766,7 @@ Function Start-PipeServerOrClient
 				# A hand-off client (different PID) presenting the same nonce is admitted too.
 				If ($ServerClientParams.$StrHandin)
 				{
-					# 0.12 PID hand-off: send the HANDIN marker, then READ the nonce the server returns after verifying our
+					# 0.13 PID hand-off: send the HANDIN marker, then READ the nonce the server returns after verifying our
 					# PID, and store it so this client is normal for any later reconnect.
 					$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($StrHandinMarker)
 					Try

@@ -2,7 +2,7 @@
 #requires -Version 5.0
 <#
     .SYNOPSIS
-    Module regression for the 0.12 PID hand-off through a REAL spawned server. A "GUI" session arms the
+    Module regression for the 0.13 PID hand-off through a REAL spawned server. A "GUI" session arms the
     child terminal's PID (HANDOFF), disconnects; the child (separate process) reconnects via HANDIN, is
     admitted ONLY on a matching kernel-verified PID, receives the nonce, and runs a request. Non-elevated.
 
@@ -12,7 +12,7 @@
 [CmdletBinding()]
 Param ()
 Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module NamedPipe -RequiredVersion 0.12 -Force -ErrorAction Stop
+Import-Module NamedPipe -RequiredVersion 0.13 -Force -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case { param([string]$L, [bool]$C) if ($C) { Write-Host "[PASS] $L" -ForegroundColor Green } else { Write-Host "[FAIL] $L" -ForegroundColor Red; $Script:Pass = $false } }

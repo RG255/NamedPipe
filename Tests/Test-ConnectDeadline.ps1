@@ -10,7 +10,7 @@
 Param ()
 
 Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module NamedPipe -RequiredVersion 0.12 -Force -ErrorAction Stop
+Import-Module NamedPipe -RequiredVersion 0.13 -Force -ErrorAction Stop
 
 $pass = $true
 function Check($l, $c) { if ($c) { Write-Host "[PASS] $l" -ForegroundColor Green } else { Write-Host "[FAIL] $l" -ForegroundColor Red; $script:pass = $false } }
@@ -25,7 +25,7 @@ $pipeName = $scp.$StrPipeInfo.$StrName
 
 Write-Host ("`n=== Connect-deadline test (budget ~{0}ms, pipe {1}) ===" -f ($mo.$StrClientConnectTimeout + 2000), $pipeName) -ForegroundColor Magenta
 
-$mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.12' } | Select-Object -First 1
+$mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.13' } | Select-Object -First 1
 $sw  = [System.Diagnostics.Stopwatch]::StartNew()
 $srvPid = $mod.Invoke({ param($d) Start-PipeServerOrClient -SerialData $d }, (ConvertTo-Serial -Object $scp))
 $srvPid = [int]($srvPid | Select-Object -Last 1)

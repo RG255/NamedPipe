@@ -1,4 +1,4 @@
-# NamedPipe Module v0.12 - User Guide
+﻿# NamedPipe Module v0.13 - User Guide
 
 <!-- CONTRIBUTOR NOTE: Do NOT use em-dashes in this file. Use a regular hyphen (-) only.
      Em-dashes cause PowerShell parser errors in string literals and may be silently
@@ -161,12 +161,12 @@ This is automatic and invisible: you do not generate, pass, or see the nonce in 
 defence-in-depth layer, not a wall: if an attacker can read the genuine client's memory it can read the
 nonce too - an operating-system-integrity problem no pipe check can solve.)
 
-### What's New in v0.12 (leak-proof session hand-off)
+### What's New in v0.13 (leak-proof session hand-off)
 
 v0.11 admits a *different* process that presents the session nonce - which is what lets a GUI hand its
 elevated session to a separate terminal window. But *how* does that terminal get the nonce? Passing it in an
 environment variable or on the command line would leak it, because any process running as the same user can
-read those. v0.12 closes that gap: the nonce is **never** passed to the new process out-of-band. Instead the
+read those. v0.13 closes that gap: the nonce is **never** passed to the new process out-of-band. Instead the
 two ends do a short **PID-verified handshake** and the server delivers the nonce over the pipe itself, to the
 one process whose identity it has just confirmed.
 
@@ -387,7 +387,7 @@ Three facts collide:
    arguments are readable by any process running as the same user, so putting the nonce there would leak it to
    exactly the same-user attacker the nonce exists to stop.
 
-### The protocol (v0.12)
+### The protocol (v0.13)
 
 A short, PID-verified handshake. Only the pipe **name** (public - pipe names are enumerable) ever crosses
 out-of-band; the nonce is delivered over the PID-verified pipe.
@@ -858,7 +858,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.12' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.13' }
     )
 }
 ```

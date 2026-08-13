@@ -30,10 +30,10 @@ Param (
 )
 
 Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-# Use the DEPLOYED 0.12 by name+version. Loading source by path timed out because the spawned
-# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.12
+# Use the DEPLOYED 0.13 by name+version. Loading source by path timed out because the spawned
+# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.13
 # (side-by-side) and re-deploy after each source change before testing.
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.12
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.13
 function Invoke-RequiredActions
 {
   <#
@@ -199,7 +199,7 @@ function Invoke-RequiredActions
   }
   # ===== END RE-LISTEN TEST =====
 
-  # ===== HAND-OFF TEST (0.12 PID hand-off) =====
+  # ===== HAND-OFF TEST (0.13 PID hand-off) =====
   # A SEPARATE process (its own PID) reconnects to THIS server via a PID HANDIN and runs a Write-Host on the
   # server, so "Hello world - handoff client" prints on the SAME server window as the other Hello World lines -
   # proving the nonce reached the vouched-for terminal without crossing any out-of-band channel.

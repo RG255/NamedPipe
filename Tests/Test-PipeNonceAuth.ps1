@@ -13,7 +13,7 @@
          server kept re-listening after rejecting the impostor.
 
     The standalone method proof is C:\Temp\nonce-authtest.ps1; THIS exercises the module end to end.
-    Run under pwsh (PS7). Requires NamedPipe 0.12 DEPLOYED (the server self-spawns by module name).
+    Run under pwsh (PS7). Requires NamedPipe 0.13 DEPLOYED (the server self-spawns by module name).
 #>
 [CmdletBinding()]
 Param (
@@ -22,7 +22,7 @@ Param (
 )
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.12 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.13 -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case
@@ -93,7 +93,7 @@ try
     # --- 3. RECOVERY: legit reconnect with the CORRECT nonce is admitted (server kept re-listening). ---
     $Private:Recovered = $false
     $Private:RlScp = Set-ObjectParams -Client -Dataset $StrServerClientParams -MyParameters $ServerClientParams
-    $Private:RlMod = Get-Module -Name NamedPipe | Where-Object { $_.Version -eq [version]'0.12' } | Select-Object -First 1
+    $Private:RlMod = Get-Module -Name NamedPipe | Where-Object { $_.Version -eq [version]'0.13' } | Select-Object -First 1
     $Private:RlScp.$StrPipeInfo = $Private:RlMod.Invoke(
         { param($d) Start-PipeServerOrClient -SerialData $d },
         (ConvertTo-Serial -Object $Private:RlScp))

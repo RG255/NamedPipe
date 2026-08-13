@@ -234,7 +234,7 @@
 					{ [int]$MyOptions.$StrLogRetentionDays }
 					Else
 					{ [int]14 }
-					# 0.12 PID hand-off: preserve the Handin flag through the Server build so the Client build (which is
+					# 0.13 PID hand-off: preserve the Handin flag through the Server build so the Client build (which is
 					# built FROM this ServerClientParams) inherits it - mirrors how $StrNonce flows.
 					$StrHandin = if ($MyParameters.$StrHandin -or $MyOptions.$StrHandin)
 					{ $True }
@@ -328,7 +328,7 @@
 					{ $MyOptions.$StrNonce }
 					Else
 					{ $null }
-					# 0.12 PID hand-off: client option. When set (VHDTools hand-off), the client does a HANDIN (send marker,
+					# 0.13 PID hand-off: client option. When set (VHDTools hand-off), the client does a HANDIN (send marker,
 					# receive the nonce) instead of presenting a nonce it does not have.
 					$StrHandin = if ($MyParameters.$StrHandin -or $MyOptions.$StrHandin)
 					{ $True }
