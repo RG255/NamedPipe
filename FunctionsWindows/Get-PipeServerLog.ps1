@@ -1,4 +1,4 @@
-Function Get-PipeServerLog
+﻿Function Get-PipeServerLog
 {
 	<#
 		.SYNOPSIS

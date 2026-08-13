@@ -1,4 +1,4 @@
-Function Send-Data
+﻿Function Send-Data
 {
 	<#
 		.SYNOPSIS

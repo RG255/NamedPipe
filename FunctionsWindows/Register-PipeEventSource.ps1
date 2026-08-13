@@ -1,4 +1,4 @@
-Function Register-PipeEventSource
+﻿Function Register-PipeEventSource
 {
 	<#
 		.SYNOPSIS

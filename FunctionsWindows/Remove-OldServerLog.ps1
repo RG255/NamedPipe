@@ -1,4 +1,4 @@
-Function Remove-OldServerLog
+﻿Function Remove-OldServerLog
 {
 	<#
 		.SYNOPSIS

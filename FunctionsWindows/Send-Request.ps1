@@ -1,4 +1,4 @@
-Function Send-Request
+﻿Function Send-Request
 {
   <#
     .SYNOPSIS

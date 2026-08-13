@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # Hand-off CLIENT helper (the "terminal"): a separate process that reconnects to an existing server via a
 # PID HANDIN (no nonce passed to it), receives the nonce over the PID-verified channel, and runs a request.
 # Writes its outcome to ResultFile: 'handin-ok' on success, 'REFUSED' if the server would not admit it.

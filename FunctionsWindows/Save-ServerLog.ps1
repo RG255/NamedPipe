@@ -1,4 +1,4 @@
-Function Save-ServerLog
+﻿Function Save-ServerLog
 {
 	<#
 		.SYNOPSIS

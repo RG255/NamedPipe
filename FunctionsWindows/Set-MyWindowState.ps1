@@ -1,4 +1,4 @@
-# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-MyWindowState.ps1 by Sync-SharedUtilities - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-MyWindowState.ps1 by Sync-SharedUtilities [SHA256 6ECF1FDB94FD5E0069BDFC65BA62EBD2906827F2511F27E80AA7B49CC05E12B6] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Set-MyWindowState
 {
 	<#

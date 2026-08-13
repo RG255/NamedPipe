@@ -1,4 +1,4 @@
-Function Test-PipeSession
+﻿Function Test-PipeSession
 {
 	<#
 		.SYNOPSIS

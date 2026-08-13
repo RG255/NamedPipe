@@ -1,4 +1,4 @@
-#requires -Modules Pester
+﻿#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
 <#
 	Unit tests for the 0.10 pipe-injection request allowlist (Test-RequestPolicy).
 	Self-contained: dot-sources the function file directly. No module import, no pipe, no elevation,

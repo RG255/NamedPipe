@@ -1,4 +1,4 @@
-# VENDORED from CommonScripts\0.2\Functions\Write-MyLog.ps1 by Sync-SharedUtilities - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Write-MyLog.ps1 by Sync-SharedUtilities [SHA256 8D933E49ADBD10213B3ECA08074E6B44629CFBF209A812616FB0A8D25708DC6A] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Write-MyLog
 {
 	<#

@@ -1,4 +1,4 @@
-Function Set-PipeIntegrityLabel
+﻿Function Set-PipeIntegrityLabel
 {
 	<#
 		.SYNOPSIS

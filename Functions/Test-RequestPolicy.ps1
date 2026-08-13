@@ -1,4 +1,4 @@
-Function Test-RequestPolicy
+﻿Function Test-RequestPolicy
 {
 	<#
 		.SYNOPSIS

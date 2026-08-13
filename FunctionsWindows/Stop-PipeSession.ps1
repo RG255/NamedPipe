@@ -1,4 +1,4 @@
-Function Stop-PipeSession
+﻿Function Stop-PipeSession
 {
 	<#
 		.SYNOPSIS

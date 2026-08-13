@@ -1,4 +1,4 @@
-#Requires -Modules Pester
+﻿#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
 <#
     .SYNOPSIS
     Pester tests for the NamedPipe module v0.7

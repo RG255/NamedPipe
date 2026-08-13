@@ -1,4 +1,4 @@
-Function ConvertTo-Parameters
+﻿Function ConvertTo-Parameters
 {
 	<#
 			.SYNOPSIS

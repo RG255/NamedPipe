@@ -1,4 +1,4 @@
-# VENDORED from CommonScripts\0.2\Functions\Format-MyTextLine.ps1 by Sync-SharedUtilities - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Format-MyTextLine.ps1 by Sync-SharedUtilities [SHA256 1A0D38D4A2850E806CDEBF1876B6C4A6F745D77DD8A16D401F15AFC6696A6CF8] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Format-MyTextLine
 {
 	<#

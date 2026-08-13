@@ -1,4 +1,4 @@
-# Regression test for 0.11 item 4.1b - the pipe mandatory integrity label (Set-PipeIntegrityLabel).
+﻿# Regression test for 0.11 item 4.1b - the pipe mandatory integrity label (Set-PipeIntegrityLabel).
 #
 # Proves the SHIPPED module function labels a pipe such that a genuine LOW-integrity client is refused
 # while a Medium client connects. Same user + same DACL for both children, so ONLY the integrity label

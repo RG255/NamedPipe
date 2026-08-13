@@ -1,4 +1,4 @@
-Function Add-ServerLogEntry
+﻿Function Add-ServerLogEntry
 {
 	<#
 		.SYNOPSIS

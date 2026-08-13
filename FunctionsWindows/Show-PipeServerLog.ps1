@@ -1,4 +1,4 @@
-Function Show-PipeServerLog
+﻿Function Show-PipeServerLog
 {
 	<#
 		.SYNOPSIS

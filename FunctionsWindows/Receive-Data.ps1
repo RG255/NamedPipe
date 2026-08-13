@@ -1,4 +1,4 @@
-Function Receive-Data
+﻿Function Receive-Data
 {
 	<#
 		.SYNOPSIS

@@ -1,4 +1,4 @@
-# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-Folder.ps1 by Sync-SharedUtilities - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-Folder.ps1 by Sync-SharedUtilities [SHA256 26563722275E576CD08ACEF8D77224455D5508A842C9660F4806C52FE4F42371] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Assert-Folder
 {
 	<#

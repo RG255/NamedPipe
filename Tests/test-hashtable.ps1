@@ -1,4 +1,4 @@
-# Test script to check what values are parsed from the DefineVariablesPipe hashtable
+﻿# Test script to check what values are parsed from the DefineVariablesPipe hashtable
 
 # First define the required variables that the file depends on
 $VSScript = 'Script'

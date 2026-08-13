@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # Hand-off demo CLIENT for Start-PipeTest: a SEPARATE process (its own PID) that reconnects to the harness's
 # existing server via a PID HANDIN (no nonce passed to it), then runs a Write-Host ON THE SERVER so
 # "Hello world - handoff client" prints on the same server window as the harness's other Hello World lines.

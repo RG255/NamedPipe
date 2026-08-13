@@ -1,4 +1,4 @@
-Function Set-ObjectParams
+﻿Function Set-ObjectParams
 {
 	<#
 			.SYNOPSIS

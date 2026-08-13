@@ -1,4 +1,4 @@
-Function Start-PipeSession
+﻿Function Start-PipeSession
 {
 	<#
 		.SYNOPSIS

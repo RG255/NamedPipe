@@ -1,4 +1,4 @@
-# In the following tables defining variables:
+﻿# In the following tables defining variables:
 #
 # Option can be one of the following: AllScope, Private, Constant, ReadOnly, None
 # Scope  can be one of the following: Global, Local, Script , Using, Workflow

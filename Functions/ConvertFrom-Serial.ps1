@@ -1,4 +1,4 @@
-#!/usr/bin/env powershell
+﻿#!/usr/bin/env powershell
 #requires -Version 5.0
 
 # Script-level chunk buffer for accumulating chunks across calls
