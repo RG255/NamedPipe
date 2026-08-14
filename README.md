@@ -21,16 +21,17 @@ for each operation.
 
 ## Installation
 
-Copy the `0.7` folder to your PowerShell modules directory:
+Deploy with the repo's standard deployment script (installs to the admin-only, AllUsers
+Program Files module path):
 
-```
-Documents\WindowsPowerShell\Modules\NamedPipe\0.7\
+```powershell
+powershell.exe -NoProfile -File "D:\PowerShellScripts\Modules\Deploy-Modules.ps1" -Module NamedPipe -Version 0.13
 ```
 
 Then import:
 
 ```powershell
-Import-Module NamedPipe -RequiredVersion 0.8
+Import-Module NamedPipe -RequiredVersion 0.13
 ```
 
 ## Documentation

@@ -58,10 +58,16 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 | `ModuleToLoad.Path` | `ModuleToLoad` now accepts an optional `Path` field containing the full path to the consumer module's `.psd1` file. When present, the spawned server imports by path rather than by name+version. This is required when the module lives on a network or OneDrive drive (`L:\`, etc.) that is not in `$PSModulePath` in the elevated spawned process. |
 | Spawn path fix | `Start-PipeServerOrClient` now uses `Get-Module -Name NamedPipe \| Sort-Object Version -Descending \| Select-Object -First 1` to locate its own script file when building the spawned server command line. This replaces the previous `$MyInvocation`-based approach and is robust when multiple NamedPipe versions are simultaneously loaded in the session. |
 
-### What's New in v0.10 (injection hardening - IN PROGRESS)
+### What's New in v0.10 (injection hardening - BUILT, TESTED, DEPLOYED)
 
-See `PIPE-INJECTION-HARDENING-PLAN.md` for the full plan. 0.10 is opt-in: existing consumers pin 0.9 and
-are unaffected. Behaviour is IDENTICAL to 0.9 unless you opt in to the new option below.
+See `_PlanningDocs\NamedPipe\0.13\PIPE-INJECTION-HARDENING-PLAN.md` for the full plan and its current
+status. The mechanism below is complete and has shipped in every version since 0.10 (current live
+version is 0.13 - every real consumer is on the hardened transport line). It remains fully **opt-in per
+session**: as of 2026-08-14 no consumer has actually set `RequestPolicy`, so behaviour is IDENTICAL to
+0.9 for everyone today unless you opt in to the option below yourself. (The planning doc's Section 9
+records why adoption is not currently recommended for any consumer here - the request policy itself
+works exactly as documented, but proving an `AllowedCommands` list is complete enough to trust is a much
+higher bar than it first appears.)
 
 | Feature | Description |
 |---------|-------------|
@@ -1042,7 +1048,7 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.8   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.13   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
 
