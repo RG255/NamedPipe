@@ -58,10 +58,11 @@
 	)
 	If ($Display)
 	{
+		$Private:Stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
 		If ($Title)
-		{$Private:Msg = '{1}{0}{2}{0}{1}' -f $StrCrlf, ''.PadRight(20, '-'), $Title}
+		{$Private:Msg = '{1}{0}{3} {2}{0}{1}' -f $StrCrlf, ''.PadRight(40, '-'), $Title, $Private:Stamp}
 		Else
-		{$Private:Msg = '{0}' -f ''.PadRight(20, '-')}
+		{$Private:Msg = '{1} {0}' -f ''.PadRight(40, '-'), $Private:Stamp}
 		Write-Information -InformationAction Continue -MessageData $Private:Msg
 	}
 	if ($Object.count -ne [int]0)

@@ -86,7 +86,7 @@
 		}
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
-			Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: About to serialize (ChunkSize=$($PipeInfo.$StrChunkSize), Depth=$($PipeInfo.$StrDepth))" -ForegroundColor Yellow
+			Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: About to serialize (ChunkSize=$($PipeInfo.$StrChunkSize), Depth=$($PipeInfo.$StrDepth))" -ForegroundColor Yellow
 		}
 
 		# Serialize with chunking and depth settings from PipeInfo
@@ -94,7 +94,7 @@
 
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
-			Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: Serialized, type=$($serialized.GetType().Name), length=$($serialized.Length)" -ForegroundColor Yellow
+			Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Serialized, type=$($serialized.GetType().Name), length=$($serialized.Length)" -ForegroundColor Yellow
 		}
 
 		# Warning if serialized data is suspiciously small (may indicate truncation)
@@ -112,7 +112,7 @@
 
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
-				Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: Chunked transfer, $totalChunks chunks" -ForegroundColor Yellow
+				Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Chunked transfer, $totalChunks chunks" -ForegroundColor Yellow
 			}
 
 			foreach ($chunk in $serialized)
@@ -127,7 +127,7 @@
 				# Report progress if InfoDisplay enabled
 				if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 				{
-					Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: Sent chunk $chunkNum of $totalChunks" -ForegroundColor Cyan
+					Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Sent chunk $chunkNum of $totalChunks" -ForegroundColor Cyan
 				}
 			}
 		}
@@ -136,13 +136,13 @@
 			# Single message - send as-is (backward compatible)
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
-				Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: Single message, about to WriteLine" -ForegroundColor Yellow
+				Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Single message, about to WriteLine" -ForegroundColor Yellow
 			}
 			$PipeInfo.$StrWriter.WriteLine($serialized)
 			$PipeInfo.$StrWriter.Flush()
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
-				Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: Flush done" -ForegroundColor Green
+				Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Flush done" -ForegroundColor Green
 			}
 		}
 
@@ -152,7 +152,7 @@
 		{
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
-				Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: Client waiting for response..." -ForegroundColor Yellow
+				Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Client waiting for response..." -ForegroundColor Yellow
 			}
 			Receive-Data -PipeInfo $PipeInfo -ErrorAction Stop
 		}
@@ -160,7 +160,7 @@
 		{
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
-				Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Send-Data: Server send complete, returning" -ForegroundColor Green
+				Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Server send complete, returning" -ForegroundColor Green
 			}
 		}
 	}
