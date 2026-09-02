@@ -47,12 +47,12 @@
 		# Read first line
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
-			Write-Host "DEBUG Receive-Data: About to ReadLine (blocking)..." -ForegroundColor Cyan
+			Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: About to ReadLine (blocking)..." -ForegroundColor Cyan
 		}
 		$line = $PipeInfo.$StrReader.ReadLine()
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
-			Write-Host "DEBUG Receive-Data: ReadLine returned, length=$($line.Length)" -ForegroundColor Cyan
+			Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: ReadLine returned, length=$($line.Length)" -ForegroundColor Cyan
 		}
 		# ReadLine returns $null when the peer closes the pipe cleanly (no bytes left).
 		# Short-circuit here with a Disconnect marker so the server's re-listen branch
@@ -62,7 +62,7 @@
 		if ($null -eq $line)
 		{
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
-			{ Write-Host 'DEBUG Receive-Data: Peer closed pipe (ReadLine=$null) - returning Disconnect marker' -ForegroundColor Yellow }
+			{ Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: Peer closed pipe (ReadLine=`$null) - returning Disconnect marker" -ForegroundColor Yellow }
 			return [Ordered]@{
 				$StrError             = $Null
 				$StrFromServerOrClient = $Null
@@ -83,11 +83,11 @@
 			}
 		}
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
-		{ Write-Host "DEBUG Receive-Data: About to deserialize" -ForegroundColor Cyan }
+		{ Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: About to deserialize" -ForegroundColor Cyan }
 		$received = ConvertFrom-Serial -Text $line
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
-			Write-Host "DEBUG Receive-Data: Deserialized OK" -ForegroundColor Green
+			Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: Deserialized OK" -ForegroundColor Green
 		}
 
 		# Check if this is a chunk object
@@ -100,7 +100,7 @@
 
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
-				Write-Host "DEBUG Receive-Data: Receiving chunked transfer: $transferId ($totalChunks chunks)" -ForegroundColor Cyan
+				Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: Receiving chunked transfer: $transferId ($totalChunks chunks)" -ForegroundColor Cyan
 			}
 
 			# Process first chunk
@@ -119,7 +119,7 @@
 
 					if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 					{
-						Write-Host "DEBUG Receive-Data: Received chunk $chunksReceived of $totalChunks" -ForegroundColor Cyan
+						Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: Received chunk $chunksReceived of $totalChunks" -ForegroundColor Cyan
 					}
 				}
 				else
@@ -131,7 +131,7 @@
 
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
-				Write-Host "DEBUG Receive-Data: Chunked transfer complete: $transferId" -ForegroundColor Green
+				Write-Host "$(Get-Date -Format 'HH:mm:ss.fff') DEBUG Receive-Data: Chunked transfer complete: $transferId" -ForegroundColor Green
 			}
 		}
 		else
