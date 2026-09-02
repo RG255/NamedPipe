@@ -1,6 +1,6 @@
 ﻿Function Send-Request
 {
-  <#
+	<#
     .SYNOPSIS
     Assembles and sends a request from the client to the server through the named pipe.
 
@@ -69,12 +69,12 @@
 		[Parameter(Mandatory,HelpMessage = 'Please supply the Type For this command')]
 		[Validateset('Security', 'ScriptBlock', 'ExitPipe', 'Disconnect', 'Handoff')]
 		[Validatescript({
-					$_ -imatch $StrSecurity -or
-					$_ -imatch $StrScriptBlock -or
-					$_ -imatch $StrExitPipe -or
-					$_ -imatch $StrDisconnect -or
-					$_ -imatch $StrHandoff
-		})]
+				$_ -imatch $StrSecurity -or
+				$_ -imatch $StrScriptBlock -or
+				$_ -imatch $StrExitPipe -or
+				$_ -imatch $StrDisconnect -or
+				$_ -imatch $StrHandoff
+			})]
 		[String]$Type,
 		[Parameter(Mandatory,HelpMessage = 'Please supply the PipeInfo Object')]
 		$PipeInfo,

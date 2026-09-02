@@ -33,8 +33,8 @@ $srvPid = [int]($srvPid | Select-Object -Last 1)
 # Deliberately DO NOT connect. Poll until the server process exits (cap 30s).
 $exited = $false
 while ($sw.Elapsed.TotalSeconds -lt 30) {
-    Start-Sleep -Milliseconds 400
-    if (-not (Get-Process -Id $srvPid -ErrorAction SilentlyContinue)) { $exited = $true; break }
+	Start-Sleep -Milliseconds 400
+	if (-not (Get-Process -Id $srvPid -ErrorAction SilentlyContinue)) { $exited = $true; break }
 }
 $elapsed = [math]::Round($sw.Elapsed.TotalSeconds, 1)
 

@@ -6,21 +6,21 @@
 param([Parameter(Mandatory)][String]$PipeName)
 $ErrorActionPreference = 'Stop'
 try {
-    Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-    Import-Module NamedPipe -RequiredVersion 0.13 -Force -ErrorAction Stop
-    $scp = Set-ObjectParams -Server -Dataset $StrServerClientParams -MyParameters @{ PipeName = $PipeName; Handin = $true }
-    $scp = Set-ObjectParams -Client -Dataset $StrServerClientParams -MyParameters $scp
-    $srp = Set-ObjectParams -Dataset $StrSendRequestParams -MyParameters $scp
-    $mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.13' } | Select-Object -First 1
-    $scp.$StrPipeInfo = $mod.Invoke({ param($d) Start-PipeServerOrClient -SerialData $d }, (ConvertTo-Serial -Object $scp))
-    $srp.$StrPipeInfo = $scp.$StrPipeInfo
-    if (-not $scp.$StrPipeInfo.$StrPipe.IsConnected) { exit 1 }
+	Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
+	Import-Module NamedPipe -RequiredVersion 0.13 -Force -ErrorAction Stop
+	$scp = Set-ObjectParams -Server -Dataset $StrServerClientParams -MyParameters @{ PipeName = $PipeName; Handin = $true }
+	$scp = Set-ObjectParams -Client -Dataset $StrServerClientParams -MyParameters $scp
+	$srp = Set-ObjectParams -Dataset $StrSendRequestParams -MyParameters $scp
+	$mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.13' } | Select-Object -First 1
+	$scp.$StrPipeInfo = $mod.Invoke({ param($d) Start-PipeServerOrClient -SerialData $d }, (ConvertTo-Serial -Object $scp))
+	$srp.$StrPipeInfo = $scp.$StrPipeInfo
+	if (-not $scp.$StrPipeInfo.$StrPipe.IsConnected) { exit 1 }
 
-    $srp.$StrType = $StrScriptBlock
-    $srp.$StrDataObject = 'Write-Host -Object "Hello world - handoff client" -ForegroundColor Cyan' | Send-Request @srp
+	$srp.$StrType = $StrScriptBlock
+	$srp.$StrDataObject = 'Write-Host -Object "Hello world - handoff client" -ForegroundColor Cyan' | Send-Request @srp
 
-    $srp.$StrType = $StrDisconnect
-    $srp.$StrDataObject = '' | Send-Request @srp
-    exit 0
+	$srp.$StrType = $StrDisconnect
+	$srp.$StrDataObject = '' | Send-Request @srp
+	exit 0
 }
 catch { exit 20 }

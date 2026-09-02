@@ -34,14 +34,14 @@
 		[Parameter(Mandatory,ParameterSetName = 'Either',HelpMessage = 'Please state the dataset to initialise')]
 		[validateset('PipeParams', 'DataObject','ServerClientParams','SendRequestParams','PipeInfo','MyOptions','BreakPoint')]
 		[validatescript({
-					$_ -imatch $StrPipeParams -or 
-					$_ -imatch $StrDataObject -or
-					$_ -imatch $StrMyOptions -or
-					$_ -imatch $StrServerClientParams -or
-					$_ -imatch $StrSendRequestParams -or
-					$_ -imatch $StrPipeInfo -or
-					$_ -imatch $StrBreakpoint
-		})]
+				$_ -imatch $StrPipeParams -or 
+				$_ -imatch $StrDataObject -or
+				$_ -imatch $StrMyOptions -or
+				$_ -imatch $StrServerClientParams -or
+				$_ -imatch $StrSendRequestParams -or
+				$_ -imatch $StrPipeInfo -or
+				$_ -imatch $StrBreakpoint
+			})]
 		[String]$Dataset,
 		[Parameter(ParameterSetName = 'Server')]
 		[Parameter(ParameterSetName = 'Client')]

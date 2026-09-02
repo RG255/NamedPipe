@@ -19,26 +19,26 @@ Import-Module -Name NamedPipe -Force -RequiredVersion 0.13 -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case { param([string]$Label, [bool]$Cond)
-    if ($Cond) { Write-Host "[PASS] $Label" -ForegroundColor Green }
-    else { Write-Host "[FAIL] $Label" -ForegroundColor Red; $Script:Pass = $false } }
+	if ($Cond) { Write-Host "[PASS] $Label" -ForegroundColor Green }
+	else { Write-Host "[FAIL] $Label" -ForegroundColor Red; $Script:Pass = $false } }
 
 $LogDir = Join-Path $env:APPDATA 'NamedPipe-Logs'
 
 function Invoke-LoggedSession {
-    param([int]$InfoDisplay)
-    $Private:MO = Set-ObjectParams -Dataset $StrMyOptions -MyParameters @{}
-    $Private:MO.$StrInfoDisplay = $InfoDisplay
-    $Private:MO.$StrWindowStyle = $StrHidden
-    $Private:Session = Start-PipeSession -MyParameters $Private:MO
-    $Private:SCP = $Private:Session.$StrServerClientParams
-    $Private:SRP = $Private:Session.$StrSendRequestParams
-    $Private:PipeName = $Private:SCP.$StrPipeInfo.$StrName
-    $Private:SRP.$StrType = $StrScriptBlock
-    $Private:SRP.$StrDataObject = 'Write-Output "ok"' | Send-Request @Private:SRP
-    # Clean shutdown (ExitPipe) - the server flushes/decides its log on the way out.
-    Stop-PipeSession -SendRequestParams $Private:SRP -PipeInfo $Private:SCP.$StrPipeInfo
-    Start-Sleep -Seconds 2   # allow the separate server process to exit and write (or discard) its log
-    return $Private:PipeName
+	param([int]$InfoDisplay)
+	$Private:MO = Set-ObjectParams -Dataset $StrMyOptions -MyParameters @{}
+	$Private:MO.$StrInfoDisplay = $InfoDisplay
+	$Private:MO.$StrWindowStyle = $StrHidden
+	$Private:Session = Start-PipeSession -MyParameters $Private:MO
+	$Private:SCP = $Private:Session.$StrServerClientParams
+	$Private:SRP = $Private:Session.$StrSendRequestParams
+	$Private:PipeName = $Private:SCP.$StrPipeInfo.$StrName
+	$Private:SRP.$StrType = $StrScriptBlock
+	$Private:SRP.$StrDataObject = 'Write-Output "ok"' | Send-Request @Private:SRP
+	# Clean shutdown (ExitPipe) - the server flushes/decides its log on the way out.
+	Stop-PipeSession -SendRequestParams $Private:SRP -PipeInfo $Private:SCP.$StrPipeInfo
+	Start-Sleep -Seconds 2   # allow the separate server process to exit and write (or discard) its log
+	return $Private:PipeName
 }
 
 Write-Host "`n=== Server-log E2E (real spawned server) ===" -ForegroundColor Magenta
@@ -53,12 +53,12 @@ $P8 = Invoke-LoggedSession -InfoDisplay 8
 $F8 = @(Get-ChildItem -Path $LogDir -Filter ('server-*-{0}.log' -f $P8) -ErrorAction SilentlyContinue)
 Assert-Case ('clean InfoDisplay=8 -> log file kept (pipe {0})' -f $P8) ($F8.Count -ge 1)
 if ($F8.Count -ge 1) {
-    $Txt = Get-Content -Path $F8[0].FullName -Raw
-    Assert-Case 'kept log records outcome exit-pipe' ($Txt -match 'Outcome\s*:\s*exit-pipe')
-    Assert-Case 'kept log has the connect milestone' ($Txt -match 'client connected and validated')
-    Assert-Case 'kept log contains no drive-letter path' ($Txt -notmatch '[A-Za-z]:\\')
-    # tidy up the artifact this test created
-    Remove-Item $F8[0].FullName -Force -ErrorAction SilentlyContinue
+	$Txt = Get-Content -Path $F8[0].FullName -Raw
+	Assert-Case 'kept log records outcome exit-pipe' ($Txt -match 'Outcome\s*:\s*exit-pipe')
+	Assert-Case 'kept log has the connect milestone' ($Txt -match 'client connected and validated')
+	Assert-Case 'kept log contains no drive-letter path' ($Txt -notmatch '[A-Za-z]:\\')
+	# tidy up the artifact this test created
+	Remove-Item $F8[0].FullName -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ''

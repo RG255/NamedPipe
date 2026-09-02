@@ -34,9 +34,9 @@
 		[Parameter(Mandatory,HelpMessage = 'Please pass the Type Parameter.')]
 		[validateset('Console', 'ConsoleStop')]
 		[validatescript({
-					$_ -imatch $StrConsole -or 
-					$_ -imatch $StrConsoleStop
-		})]
+				$_ -imatch $StrConsole -or 
+				$_ -imatch $StrConsoleStop
+			})]
 		[string]$Type
 	)
 	$Private:dataObject = Set-ObjectParams -MyParameters $PSCmdlet.MyInvocation.BoundParameters -Dataset DataObject

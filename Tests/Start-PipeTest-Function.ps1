@@ -69,7 +69,7 @@ Function Start-PipeTest
 		# Get the current secirity setting on the pipe
 		$SendRequestParams.$StrType = $StrSecurity
 		$SendRequestParams.$StrDataObject = '' | 
-		Send-Request @SendRequestParams
+			Send-Request @SendRequestParams
 
 		If ($ServerClientParams.$StrInfoDisplay -band 2)
 		{
@@ -126,19 +126,19 @@ Function Start-PipeTest
 	
 		$SendRequestParams.$StrDataObject.$StrParameters = $SWParam
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId {0} -State {1}' -f $SendRequestParams.$StrDataObject.$StrServerPID, $StrRestore|
-		Send-Request @SendRequestParams
+			Send-Request @SendRequestParams
 	
 		if ($SendRequestParams.$StrDataObject.$StrError)
 		{write-information -MessageData $SendRequestParams.$StrDataObject.$StrError -InformationAction Continue}
 	
 		$SendRequestParams.$StrDataObject = 'Write-Host -Object "{0}" -Foreground Green' -f 'Hello World' |
-		Send-Request @SendRequestParams
+			Send-Request @SendRequestParams
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId {0} -State {1} -Set -Passthru' -f $SendRequestParams.$StrDataObject.$StrServerPID, $StrMinimize|
-		Send-Request @SendRequestParams
+			Send-Request @SendRequestParams
 		$WindowInfo = $SendRequestParams.$StrDataObject.$StrResult
 	
 		$SendRequestParams.$StrDataObject = 'Write-Host -Object "{0}" -Foreground red' -f 'Hello World'|
-		Send-Request @SendRequestParams
+			Send-Request @SendRequestParams
 
 		# ===== HEALTH PIPE CHECK =====
 
@@ -153,12 +153,12 @@ Function Start-PipeTest
 		Get-PSCallStack
 	
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId ${0} -Passthru' -f 'pid'|
-		Send-Request @SendRequestParams
+			Send-Request @SendRequestParams
 		If ($ServerClientParams.$StrInfoDisplay -band 2)
 		{Show-VerboseData -Object $SendRequestParams.DataObject -Display -Title 'Data Object Set-Window call'}
 	
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId {0} -State {1} -Set -Passthru -characters' -f $SendRequestParams.$StrDataObject.$StrServerPID, $StrRestore|
-		Send-Request @SendRequestParams
+			Send-Request @SendRequestParams
 		#start-sleep -Seconds 5
 		#$SendRequestParams.DataObject = 'Get-MyDiskInfo -disknumber 0 '| Send-Request @SendRequestParams
 		#D:\PowerShellScripts\DisplayMyDisks\Display-MyDisks.ps1 -DiskInfo $SendRequestParams.DataObject.Result -sdisk

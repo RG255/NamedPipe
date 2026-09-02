@@ -7,15 +7,15 @@ $VOReadOnly = 'ReadOnly'
 
 # Function to capture MyVars
 function Publish-Variables {
-    Write-Host "Publish-Variables called. Checking MyVars:" -ForegroundColor Cyan
-    foreach ($VarSet in $MyVars.Keys) {
-        Write-Host "  VarSet: $VarSet" -ForegroundColor Yellow
-        foreach ($Item in $MyVars[$VarSet].Keys | Sort-Object) {
-            $value = $MyVars[$VarSet][$Item].Value
-            $valueBytes = if ($value) { [System.Text.Encoding]::UTF8.GetBytes($value) -join ',' } else { 'NULL/EMPTY' }
-            Write-Host "    $Item = '$value' (bytes: $valueBytes)"
-        }
-    }
+	Write-Host "Publish-Variables called. Checking MyVars:" -ForegroundColor Cyan
+	foreach ($VarSet in $MyVars.Keys) {
+		Write-Host "  VarSet: $VarSet" -ForegroundColor Yellow
+		foreach ($Item in $MyVars[$VarSet].Keys | Sort-Object) {
+			$value = $MyVars[$VarSet][$Item].Value
+			$valueBytes = if ($value) { [System.Text.Encoding]::UTF8.GetBytes($value) -join ',' } else { 'NULL/EMPTY' }
+			Write-Host "    $Item = '$value' (bytes: $valueBytes)"
+		}
+	}
 }
 
 # Dot-source the file

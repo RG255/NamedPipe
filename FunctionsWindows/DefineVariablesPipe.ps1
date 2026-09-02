@@ -98,24 +98,24 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Used in NamedPipe module - client sends to disconnect cleanly while server re-listens'
 		}
-			StrHandoff            = @{
-				Value  = 'Handoff'
-				Scope  = $VSScript
-				Option = $VONone
-				Use    = '0.13 PID hand-off: request type the authenticated client sends to ARM the server with the next connection PID (PID in $StrRequest)'
-			}
-			StrHandinMarker       = @{
-				Value  = 'HANDIN'
-				Scope  = $VSScript
-				Option = $VOReadOnly
-				Use    = '0.13 PID hand-off: first-line marker a reconnecting terminal sends (instead of the nonce) to claim a hand-off'
-			}
-			StrHandin             = @{
-				Value  = 'Handin'
-				Scope  = $VSScript
-				Option = $VONone
-				Use    = '0.13 PID hand-off: client option - do a HANDIN (send marker, receive the nonce) instead of presenting a nonce'
-			}
+		StrHandoff            = @{
+			Value  = 'Handoff'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.13 PID hand-off: request type the authenticated client sends to ARM the server with the next connection PID (PID in $StrRequest)'
+		}
+		StrHandinMarker       = @{
+			Value  = 'HANDIN'
+			Scope  = $VSScript
+			Option = $VOReadOnly
+			Use    = '0.13 PID hand-off: first-line marker a reconnecting terminal sends (instead of the nonce) to claim a hand-off'
+		}
+		StrHandin             = @{
+			Value  = 'Handin'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.13 PID hand-off: client option - do a HANDIN (send marker, receive the nonce) instead of presenting a nonce'
+		}
 		StrServer             = @{
 			Value  = 'Server'
 			Scope  = $VSScript
@@ -236,12 +236,12 @@ $MyVars = [Ordered]@{
 			Option = $VOReadOnly
 			Use    = 'InfoDisplay bitmask bit 4: Debug Write-Host in Send-Data/Receive-Data'
 		}
-			InfoDisplayBitKeepLog  = @{
-				Value  = [Int]8
-				Scope  = $VSScript
-				Option = $VOReadOnly
-				Use    = 'InfoDisplay bitmask bit 8: keep the server diagnostics log on a CLEAN exit (failures log regardless). See Save-ServerLog.'
-			}
+		InfoDisplayBitKeepLog  = @{
+			Value  = [Int]8
+			Scope  = $VSScript
+			Option = $VOReadOnly
+			Use    = 'InfoDisplay bitmask bit 8: keep the server diagnostics log on a CLEAN exit (failures log regardless). See Save-ServerLog.'
+		}
 		StrAdminRequired      = @{
 			Value  = 'AdminRequired'
 			Scope  = $VSScript
@@ -392,12 +392,12 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Capability nonce (0.11 hardening 4.2): client presents it as the first line; server admits only a matching connection. Survives the different-PID hand-off (PID is NOT used to gate).'
 		}
-			StrLogRetentionDays                  = @{
-				Value  = 'LogRetentionDays'
-				Scope  = $VSScript
-				Option = $VONone
-				Use    = 'Server diagnostics-log retention in days (0.11 hardening 4.5): prune server-*.log older than this at server startup. 0 = keep forever; default 14. Pass via Start-PipeSession -Options.'
-			}
+		StrLogRetentionDays                  = @{
+			Value  = 'LogRetentionDays'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = 'Server diagnostics-log retention in days (0.11 hardening 4.5): prune server-*.log older than this at server startup. 0 = keep forever; default 14. Pass via Start-PipeSession -Options.'
+		}
 		RedactBitBuiltIn                     = @{
 			Value  = [Int]1
 			Scope  = $VSScript

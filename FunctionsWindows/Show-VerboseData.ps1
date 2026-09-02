@@ -71,8 +71,8 @@
 			'LineBreakPoint'
 			{
 				$Private:Msg = $Object |
-				Select-Object -Property * |
-				Out-String
+					Select-Object -Property * |
+					Out-String
 				Write-Information -InformationAction Continue -MessageData $Private:Msg.trim("`r`n")
 			}
 			'String|ScriptBlock'

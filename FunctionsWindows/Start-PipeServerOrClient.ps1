@@ -49,7 +49,7 @@ If ($Spawned)
 	$Private:module.Invoke({
 			param($data)
 			Start-PipeServerOrClient -SerialData $data
-	}, (ConvertTo-Serial -Object $ServerClientParams))
+		}, (ConvertTo-Serial -Object $ServerClientParams))
 }
 Function Start-PipeServerOrClient
 {
@@ -230,8 +230,8 @@ Function Start-PipeServerOrClient
 				# closes the handle on process exit; this is defence in depth). Closure captures the pipe reference.
 				$Private:PipeForExit = $ServerClientParams.$StrPipeInfo.$StrPipe
 				$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action ({
-					try { if ($PipeForExit) { $PipeForExit.Dispose() } } catch { $null = $_ }
-				}.GetNewClosure())
+						try { if ($PipeForExit) { $PipeForExit.Dispose() } } catch { $null = $_ }
+					}.GetNewClosure())
 				# 0.13 PID hand-off: state + P/Invoke to read a connecting client's real (kernel-set) PID.
 				$Private:ExpectedHandinPid = [uint32]0
 				if (-not ('NamedPipe.PidQuery' -as [type]))
@@ -286,131 +286,131 @@ Function Start-PipeServerOrClient
 						1024,
 						$true
 					)
-				$ServerClientParams.$StrPipeInfo.$StrWriter = [IO.StreamWriter]::new(
-					$ServerClientParams.$StrPipeInfo.$StrPipe,
-					([System.Text.UTF8Encoding]::new($false)),
-					1024,
-					$true
-				)
-				$ServerClientParams.$StrPipeInfo.$StrWriter.AutoFlush = $True
-				# Copy InfoDisplay, ChunkSize, Depth to PipeInfo so Send-Data/Receive-Data can access them
-				$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
-				$ServerClientParams.$StrPipeInfo.$StrChunkSize = $ServerClientParams.$StrChunkSize
-				$ServerClientParams.$StrPipeInfo.$StrDepth = $ServerClientParams.$StrDepth
-				# === 0.11 hardening (4.2): capability-nonce handshake ===
-				# The client's FIRST line on a fresh connection must equal the nonce handed to this
-				# server at spawn. This gates admission WITHOUT pinning to a PID, so the VHDTools
-				# GUI->terminal hand-off (a DIFFERENT process presenting the same nonce) still works.
-				# Wrong or absent first line -> reject and re-listen (same teardown as a Disconnect).
-				# No nonce configured (older caller) -> skip the check for backward compatibility.
-				If ($ServerClientParams.$StrNonce)
-				{
-					$Private:PresentedNonce = $null
-					Try
+					$ServerClientParams.$StrPipeInfo.$StrWriter = [IO.StreamWriter]::new(
+						$ServerClientParams.$StrPipeInfo.$StrPipe,
+						([System.Text.UTF8Encoding]::new($false)),
+						1024,
+						$true
+					)
+					$ServerClientParams.$StrPipeInfo.$StrWriter.AutoFlush = $True
+					# Copy InfoDisplay, ChunkSize, Depth to PipeInfo so Send-Data/Receive-Data can access them
+					$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
+					$ServerClientParams.$StrPipeInfo.$StrChunkSize = $ServerClientParams.$StrChunkSize
+					$ServerClientParams.$StrPipeInfo.$StrDepth = $ServerClientParams.$StrDepth
+					# === 0.11 hardening (4.2): capability-nonce handshake ===
+					# The client's FIRST line on a fresh connection must equal the nonce handed to this
+					# server at spawn. This gates admission WITHOUT pinning to a PID, so the VHDTools
+					# GUI->terminal hand-off (a DIFFERENT process presenting the same nonce) still works.
+					# Wrong or absent first line -> reject and re-listen (same teardown as a Disconnect).
+					# No nonce configured (older caller) -> skip the check for backward compatibility.
+					If ($ServerClientParams.$StrNonce)
 					{
-						$Private:NonceReadTask = $ServerClientParams.$StrPipeInfo.$StrReader.ReadLineAsync()
-						If ($Private:NonceReadTask.Wait([int]$ServerClientParams.$StrClientConnectTimeout))
-						{$Private:PresentedNonce = $Private:NonceReadTask.Result}
-					}
-					Catch
-					{$Private:PresentedNonce = $null}
-					$Private:_admit = $false
-					If ($Private:PresentedNonce -eq $StrHandinMarker)
-					{
-						# 0.13 PID hand-off: a reconnecting terminal claims a hand-off. Admit ONLY if the authenticated client
-						# armed an expected PID (via a Handoff request) and the kernel-reported connecting PID matches; then hand
-						# it the nonce over this PID-verified channel so it becomes a normal client.
-						If ($Private:ExpectedHandinPid -ne 0)
+						$Private:PresentedNonce = $null
+						Try
 						{
-							$Private:_connPid = [uint32]0
-							Try { [void][NamedPipe.PidQuery]::GetNamedPipeClientProcessId($ServerClientParams.$StrPipeInfo.$StrPipe.SafePipeHandle.DangerousGetHandle(), [ref]$Private:_connPid) } Catch { $Private:_connPid = [uint32]0 }
-							If ($Private:_connPid -ne 0 -and $Private:_connPid -eq $Private:ExpectedHandinPid)
+							$Private:NonceReadTask = $ServerClientParams.$StrPipeInfo.$StrReader.ReadLineAsync()
+							If ($Private:NonceReadTask.Wait([int]$ServerClientParams.$StrClientConnectTimeout))
+							{$Private:PresentedNonce = $Private:NonceReadTask.Result}
+						}
+						Catch
+						{$Private:PresentedNonce = $null}
+						$Private:_admit = $false
+						If ($Private:PresentedNonce -eq $StrHandinMarker)
+						{
+							# 0.13 PID hand-off: a reconnecting terminal claims a hand-off. Admit ONLY if the authenticated client
+							# armed an expected PID (via a Handoff request) and the kernel-reported connecting PID matches; then hand
+							# it the nonce over this PID-verified channel so it becomes a normal client.
+							If ($Private:ExpectedHandinPid -ne 0)
 							{
-								$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($ServerClientParams.$StrNonce)
-								$Private:ExpectedHandinPid = [uint32]0
-								$Private:_admit = $true
-								Add-ServerLogEntry -Message ('hand-in accepted from PID {0}' -f $Private:_connPid)
-								If ($ServerClientParams.$StrInfoDisplay -band 4)
-								{Write-Host ('DEBUG SERVER: hand-in accepted from PID {0}' -f $Private:_connPid) -ForegroundColor Green}
+								$Private:_connPid = [uint32]0
+								Try { [void][NamedPipe.PidQuery]::GetNamedPipeClientProcessId($ServerClientParams.$StrPipeInfo.$StrPipe.SafePipeHandle.DangerousGetHandle(), [ref]$Private:_connPid) } Catch { $Private:_connPid = [uint32]0 }
+								If ($Private:_connPid -ne 0 -and $Private:_connPid -eq $Private:ExpectedHandinPid)
+								{
+									$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($ServerClientParams.$StrNonce)
+									$Private:ExpectedHandinPid = [uint32]0
+									$Private:_admit = $true
+									Add-ServerLogEntry -Message ('hand-in accepted from PID {0}' -f $Private:_connPid)
+									If ($ServerClientParams.$StrInfoDisplay -band 4)
+									{Write-Host ('DEBUG SERVER: hand-in accepted from PID {0}' -f $Private:_connPid) -ForegroundColor Green}
+								}
 							}
 						}
-					}
-					ElseIf ($Private:PresentedNonce -eq $ServerClientParams.$StrNonce)
-					{
-						$Private:_admit = $true
-						If ($ServerClientParams.$StrInfoDisplay -band 4)
-						{Write-Host 'DEBUG SERVER: nonce accepted' -ForegroundColor Green}
-					}
-					If (-not $Private:_admit)
-					{
-						If ($ServerClientParams.$StrInfoDisplay -band 4)
-						{Write-Host 'DEBUG SERVER: connection rejected (bad nonce / hand-in) - re-listening' -ForegroundColor Red}
-						try { $ServerClientParams.$StrPipeInfo.$StrReader.Dispose() } catch { $null = $_ }
-						try { $ServerClientParams.$StrPipeInfo.$StrWriter.Dispose() } catch { $null = $_ }
-						$ServerClientParams.$StrPipeInfo.$StrReader = $null
-						$ServerClientParams.$StrPipeInfo.$StrWriter = $null
-						try { $ServerClientParams.$StrPipeInfo.$StrPipe.Disconnect() } catch { $null = $_ }
-						$Script:NonceRejectCount++
-						Add-ServerLogEntry -Message 'connection rejected: wrong nonce or failed hand-in'
-						Continue
-					}
-				}
-				# === End capability-nonce handshake ===
-				$Private:EverConnected = $true
-				Add-ServerLogEntry -Message 'client connected and validated'
-				Function Stop-HealthPipe
-				{
-					[CmdletBinding(PositionalBinding = $False)]
-					Param (
-						[Parameter(Mandatory,HelpMessage = 'Provide the HealthPipeName')]
-						[String]$HealthPipeName,
-						[Parameter(Mandatory,HelpMessage = 'Provide the HealthRunspace')]
-						$HealthRunSpace,
-						[Parameter(Mandatory,HelpMessage = 'Provide the HealthPS')]
-						$HealthPS,
-						[Parameter(Mandatory,HelpMessage = 'Provide the HealthCts')]
-						$HealthCts
-					)
-					# Send STOP poison pill to unblock WaitForConnection in the health runspace.
-					# The health pipe ACL includes the server identity so this works even when elevated.
-					try
-					{
-						$StopClient = [System.IO.Pipes.NamedPipeClientStream]::new('.', $HealthPipeName, [System.IO.Pipes.PipeDirection]::InOut)
-						$StopClient.Connect(1000)
-						$StopWriter = [System.IO.StreamWriter]::new($StopClient)
-						$StopWriter.AutoFlush = $true
-						$StopWriter.WriteLine('STOP')
-						$StopClient.Dispose()
-					}
-					catch
-					{
-						if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
-						{ Write-Host "DEBUG Stop-HealthPipe: Failed to send STOP: $($_.Exception.Message)" -ForegroundColor DarkYellow }
-					}
-					Start-Sleep -Milliseconds 200
-					if ($HealthCts)
-					{
-						try { $HealthCts.Cancel() } catch
+						ElseIf ($Private:PresentedNonce -eq $ServerClientParams.$StrNonce)
 						{
-							if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
-							{ Write-Host "DEBUG Stop-HealthPipe: Failed to cancel CTS: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+							$Private:_admit = $true
+							If ($ServerClientParams.$StrInfoDisplay -band 4)
+							{Write-Host 'DEBUG SERVER: nonce accepted' -ForegroundColor Green}
 						}
-						try { $HealthCts.Dispose() } catch { $null = $_ }
-					}
-					if ($HealthPS)
-					{
-						try { $HealthPS.Dispose() } catch
+						If (-not $Private:_admit)
 						{
-							if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
-							{ Write-Host "DEBUG Stop-HealthPipe: Failed to dispose PowerShell: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+							If ($ServerClientParams.$StrInfoDisplay -band 4)
+							{Write-Host 'DEBUG SERVER: connection rejected (bad nonce / hand-in) - re-listening' -ForegroundColor Red}
+							try { $ServerClientParams.$StrPipeInfo.$StrReader.Dispose() } catch { $null = $_ }
+							try { $ServerClientParams.$StrPipeInfo.$StrWriter.Dispose() } catch { $null = $_ }
+							$ServerClientParams.$StrPipeInfo.$StrReader = $null
+							$ServerClientParams.$StrPipeInfo.$StrWriter = $null
+							try { $ServerClientParams.$StrPipeInfo.$StrPipe.Disconnect() } catch { $null = $_ }
+							$Script:NonceRejectCount++
+							Add-ServerLogEntry -Message 'connection rejected: wrong nonce or failed hand-in'
+							Continue
 						}
 					}
-					if ($HealthRunspace)
+					# === End capability-nonce handshake ===
+					$Private:EverConnected = $true
+					Add-ServerLogEntry -Message 'client connected and validated'
+					Function Stop-HealthPipe
 					{
-						try { $HealthRunspace.Close() } catch { $null = $_ }
-						try { $HealthRunspace.Dispose() } catch { $null = $_ }
+						[CmdletBinding(PositionalBinding = $False)]
+						Param (
+							[Parameter(Mandatory,HelpMessage = 'Provide the HealthPipeName')]
+							[String]$HealthPipeName,
+							[Parameter(Mandatory,HelpMessage = 'Provide the HealthRunspace')]
+							$HealthRunSpace,
+							[Parameter(Mandatory,HelpMessage = 'Provide the HealthPS')]
+							$HealthPS,
+							[Parameter(Mandatory,HelpMessage = 'Provide the HealthCts')]
+							$HealthCts
+						)
+						# Send STOP poison pill to unblock WaitForConnection in the health runspace.
+						# The health pipe ACL includes the server identity so this works even when elevated.
+						try
+						{
+							$StopClient = [System.IO.Pipes.NamedPipeClientStream]::new('.', $HealthPipeName, [System.IO.Pipes.PipeDirection]::InOut)
+							$StopClient.Connect(1000)
+							$StopWriter = [System.IO.StreamWriter]::new($StopClient)
+							$StopWriter.AutoFlush = $true
+							$StopWriter.WriteLine('STOP')
+							$StopClient.Dispose()
+						}
+						catch
+						{
+							if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
+							{ Write-Host "DEBUG Stop-HealthPipe: Failed to send STOP: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+						}
+						Start-Sleep -Milliseconds 200
+						if ($HealthCts)
+						{
+							try { $HealthCts.Cancel() } catch
+							{
+								if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
+								{ Write-Host "DEBUG Stop-HealthPipe: Failed to cancel CTS: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+							}
+							try { $HealthCts.Dispose() } catch { $null = $_ }
+						}
+						if ($HealthPS)
+						{
+							try { $HealthPS.Dispose() } catch
+							{
+								if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
+								{ Write-Host "DEBUG Stop-HealthPipe: Failed to dispose PowerShell: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+							}
+						}
+						if ($HealthRunspace)
+						{
+							try { $HealthRunspace.Close() } catch { $null = $_ }
+							try { $HealthRunspace.Dispose() } catch { $null = $_ }
+						}
 					}
-				}
 				
 					# === Health pipe listener ===
 					# Start a background runspace that listens on PipeName.Health for PING/PONG
@@ -534,7 +534,7 @@ Function Start-PipeServerOrClient
 									if ($pipe) { try { $pipe.Dispose() } catch { $null = $_ } }
 								}
 							}
-					}).AddArgument($HealthPipeName).AddArgument($Private:HealthAccess).AddArgument($PSVersionTable.PSVersion.Major).AddArgument($HealthCts)
+						}).AddArgument($HealthPipeName).AddArgument($Private:HealthAccess).AddArgument($PSVersionTable.PSVersion.Major).AddArgument($HealthCts)
 					$null = $HealthPS.BeginInvoke()
 					# === End health pipe listener ===
 
@@ -661,8 +661,8 @@ Function Start-PipeServerOrClient
 						{Write-Host 'DEBUG SERVER: Send-Data completed, looping back' -ForegroundColor Green}
 					}
 					while ($ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected -and
-						   $DataObject.$StrType -inotmatch $StrExitPipe -and
-						   $DataObject.$StrType -inotmatch $StrDisconnect)
+						$DataObject.$StrType -inotmatch $StrExitPipe -and
+						$DataObject.$StrType -inotmatch $StrDisconnect)
 					If ($DataObject.$StrType -imatch $StrExitPipe)
 					{
 						# Client sent ExitPipe - server truly exits
@@ -689,70 +689,70 @@ Function Start-PipeServerOrClient
 				if (-not $Script:ServerLogSaved) { $null = Save-ServerLog -Outcome 'exit-pipe' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
 				$Script:ServerExitAccounted = $true
 				If ($ServerClientParams.Wait)
-					{
-						$null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore
-						Pause
-					}
-				}
-				Catch
 				{
-					If ($DataObject.$StrServerPID) { $null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore }
-					$Private:ErrorMsg = $_.Exception.Message
-					$Private:StackTrace = $_.ScriptStackTrace
-					$Private:FullError = NamedPipe\Get-MyErrors -Return
-
-					# Redact any drive-qualified (C:\...) or UNC (\\server\share\...) path, not just the
-					# author's development drive - a hardcoded 'D:\' silently redacted NOTHING on any other
-					# machine or for anyone using the public repo, leaking usernames via C:\Users\<name>\...
-					$Private:RedactPathPattern = '(?:[A-Za-z]:\\|\\\\)[^"]*'
-					$Private:RedactedTrace = $Private:StackTrace -replace $Private:RedactPathPattern, '<path-redacted>'
-					$Private:RedactedError = $Private:FullError -replace $Private:RedactPathPattern, '<path-redacted>'
-
-					$Private:CatchMsg = "Pipe Server Exception`nMessage: $Private:ErrorMsg`nStack: $Private:RedactedTrace`nDetails: $Private:RedactedError"
-
-					Add-ServerLogEntry -Message $Private:CatchMsg
-					$Private:LogFile = Save-ServerLog -Outcome 'crashed' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName
-					if ($Private:LogFile) { Write-Host "Server error logged to: $Private:LogFile" -ForegroundColor Yellow }
-
-					Write-Host "Pipe Server crashed: $Private:ErrorMsg" -ForegroundColor Red
-					Write-Host "(Use path-redacted stack trace - check logs for details)" -ForegroundColor DarkGray
-					If ($ServerClientParams.Wait) { Pause }
+					$null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore
+					Pause
 				}
-				Finally
+			}
+			Catch
+			{
+				If ($DataObject.$StrServerPID) { $null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore }
+				$Private:ErrorMsg = $_.Exception.Message
+				$Private:StackTrace = $_.ScriptStackTrace
+				$Private:FullError = NamedPipe\Get-MyErrors -Return
+
+				# Redact any drive-qualified (C:\...) or UNC (\\server\share\...) path, not just the
+				# author's development drive - a hardcoded 'D:\' silently redacted NOTHING on any other
+				# machine or for anyone using the public repo, leaking usernames via C:\Users\<name>\...
+				$Private:RedactPathPattern = '(?:[A-Za-z]:\\|\\\\)[^"]*'
+				$Private:RedactedTrace = $Private:StackTrace -replace $Private:RedactPathPattern, '<path-redacted>'
+				$Private:RedactedError = $Private:FullError -replace $Private:RedactPathPattern, '<path-redacted>'
+
+				$Private:CatchMsg = "Pipe Server Exception`nMessage: $Private:ErrorMsg`nStack: $Private:RedactedTrace`nDetails: $Private:RedactedError"
+
+				Add-ServerLogEntry -Message $Private:CatchMsg
+				$Private:LogFile = Save-ServerLog -Outcome 'crashed' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName
+				if ($Private:LogFile) { Write-Host "Server error logged to: $Private:LogFile" -ForegroundColor Yellow }
+
+				Write-Host "Pipe Server crashed: $Private:ErrorMsg" -ForegroundColor Red
+				Write-Host "(Use path-redacted stack trace - check logs for details)" -ForegroundColor DarkGray
+				If ($ServerClientParams.Wait) { Pause }
+			}
+			Finally
+			{
+				# Last-resort fallback: only for an exit NOTHING else accounted for. Guarding on
+				# ServerExitAccounted (not ServerLogSaved) is what keeps a discarded clean exit from
+				# being reported here as 'unknown-exit' - a failure outcome, which would write a log
+				# on every ordinary run. The crash path sets ServerLogSaved, so it is covered too.
+				if (-not $Script:ServerLogSaved -and -not $Script:ServerExitAccounted)
+				{ $null = Save-ServerLog -Outcome 'unknown-exit' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
+				# Only stop if not already stopped in the re-listen Else branch
+				If ($HealthRunspace)
 				{
-					# Last-resort fallback: only for an exit NOTHING else accounted for. Guarding on
-					# ServerExitAccounted (not ServerLogSaved) is what keeps a discarded clean exit from
-					# being reported here as 'unknown-exit' - a failure outcome, which would write a log
-					# on every ordinary run. The crash path sets ServerLogSaved, so it is covered too.
-					if (-not $Script:ServerLogSaved -and -not $Script:ServerExitAccounted)
-					{ $null = Save-ServerLog -Outcome 'unknown-exit' -InfoDisplay $ServerClientParams.$StrInfoDisplay -PipeName $ServerClientParams.$StrPipeInfo.$StrName }
-					# Only stop if not already stopped in the re-listen Else branch
-					If ($HealthRunspace)
-					{
-						Stop-HealthPipe -HealthPipeName $HealthPipeName -HealthRunSpace $HealthRunSpace -HealthPS $HealthPS -healthCts $HealthCts
-					}
-					# Ensure proper cleanup of resources
-					if ($ServerClientParams.$StrPipeInfo.$StrReader)
-					{
-						try 
-						{$ServerClientParams.$StrPipeInfo.$StrReader.Dispose()}
-						catch 
-						{}
-					}
-					if ($ServerClientParams.$StrPipeInfo.$StrWriter)
-					{
-						try 
-						{$ServerClientParams.$StrPipeInfo.$StrWriter.Dispose()}
-						catch 
-						{}
-					}
-					if ($ServerClientParams.$StrPipeInfo.$StrPipe)
-					{
-						try
-						{$ServerClientParams.$StrPipeInfo.$StrPipe.Dispose()}
-						catch
-						{}
-					}
+					Stop-HealthPipe -HealthPipeName $HealthPipeName -HealthRunSpace $HealthRunSpace -HealthPS $HealthPS -healthCts $HealthCts
+				}
+				# Ensure proper cleanup of resources
+				if ($ServerClientParams.$StrPipeInfo.$StrReader)
+				{
+					try 
+					{$ServerClientParams.$StrPipeInfo.$StrReader.Dispose()}
+					catch 
+					{}
+				}
+				if ($ServerClientParams.$StrPipeInfo.$StrWriter)
+				{
+					try 
+					{$ServerClientParams.$StrPipeInfo.$StrWriter.Dispose()}
+					catch 
+					{}
+				}
+				if ($ServerClientParams.$StrPipeInfo.$StrPipe)
+				{
+					try
+					{$ServerClientParams.$StrPipeInfo.$StrPipe.Dispose()}
+					catch
+					{}
+				}
 			}
 		}
 	}
