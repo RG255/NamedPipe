@@ -1,4 +1,4 @@
-﻿Function ConvertTo-Parameters
+﻿Function ConvertTo-ParameterSet
 {
 	<#
 			.SYNOPSIS
@@ -23,7 +23,7 @@
 			The hashtable containing parameter names and values to convert.
 
 			.EXAMPLE
-			$Args = ConvertTo-Parameters -Hash @{ ProcessId = 1234; State = 'Restore' }
+			$Args = ConvertTo-ParameterSet -Hash @{ ProcessId = 1234; State = 'Restore' }
 			Returns: ' -ProcessId: 1234 -State: Restore'
 
 			.EXAMPLE
@@ -81,7 +81,7 @@
 				# the ENTIRE command, not just the one optional parameter. Found live 2026-08-31
 				# via VHDTools' Protect-VHDVolumeSession (a BitLocker encrypt's optional
 				# secondary-passphrase parameters, $null when no secondary passphrase was used) -
-				# confirmed by direct reproduction: ConvertTo-Parameters -Hash
+				# confirmed by direct reproduction: ConvertTo-ParameterSet -Hash
 				# @{ Foo = $null; Bar = 'x' } produced " -Foo: -Bar:'x'" (invalid) instead of
 				# " -Foo:'' -Bar:'x'" (valid, parses as an empty string - exactly what
 				# Resolve-VHDTransportKey-shaped callers already treat as "not supplied"). Treat

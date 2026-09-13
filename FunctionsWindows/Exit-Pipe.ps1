@@ -2,26 +2,26 @@
 {
 	<#
 			.SYNOPSIS
-			"Exit-Pipe" enables both the client and server ends of the pipe to 
+			"Exit-Pipe" enables both the client and server ends of the pipe to
 			close gracefully
 
 			.DESCRIPTION
-			The "$DataObject.Type" is set to "$StrExitPipe" and when this is sent to 
-			the server it causes the server to acknowledge the request and then to close 
+			The "$DataObject.Type" is set to "$StrExitPipe" and when this is sent to
+			the server it causes the server to acknowledge the request and then to close
 			the server end of the pipe. It will also process any error conditions
 			that happened prior to it being called. The server process itself will also exit.
 
 			.PARAMETER DataObject
-			-DataObject should be passed the "$DataObject" structure that allows communucation 
+			-DataObject should be passed the "$DataObject" structure that allows communucation
 			between the client an server to take place in an organised manner.
 
 			.PARAMETER PipeInfo
-			-PipeInfo is the "$PipeInfo" data structure that was wet up when the pipe was establishe 
+			-PipeInfo is the "$PipeInfo" data structure that was wet up when the pipe was establishe
 			it hold the neccessary pointers to enable communucation to take place.
 
 			.EXAMPLE
 			Exit-Pipe -DataObject Value -PipeInfo Value
-			Causes the server to acknowledge that the pipe should be shutdown and the server 
+			Causes the server to acknowledge that the pipe should be shutdown and the server
 			process to exit after closing its writer end of the pipe.
 
 			.NOTES

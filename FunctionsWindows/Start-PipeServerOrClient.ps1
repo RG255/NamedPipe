@@ -33,7 +33,7 @@ If ($Spawned)
 		Show-VerboseData -Object $ServerClientParams -Display -Title 'ServerClientParams'
 		Show-VerboseData -Object $ServerClientParams.$StrModuleToLoad -Display -Title 'Module to load in Spawned process'
 	}
-	
+
 	$ServerClientParams.$StrSpawned = $True
 	# Call via NamedPipe module scope because Start-PipeServerOrClient is internal (not exported)
 	# Always use 'NamedPipe' here regardless of $ModuleName - the function lives in NamedPipe's scope
@@ -113,7 +113,7 @@ Function Start-PipeServerOrClient
 
 	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
 	$ServerClientParams = ConvertFrom-Serial -Text $SerialData
-	$DataObject = Set-ObjectParams -Dataset 'DataObject' -MyParameters $Private:MyBoundParameters
+	$DataObject = Set-ObjectParameterSet -Dataset 'DataObject' -MyParameters $Private:MyBoundParameters
 
 	If ($ServerClientParams.$StrInfoDisplay -band 2)
 	{
@@ -121,11 +121,11 @@ Function Start-PipeServerOrClient
 		Show-VerboseData -Object $ServerClientParams.$StrPipeInfo -Display -Title ('PipeInfo on Entry Server:[{0}] Client: [{1}] Spawned: [{2}]' -f $ServerClientParams.Server, $ServerClientParams.Client, $ServerClientParams.Spawned)
 		Show-VerboseData -Object $ServerClientParams.$StrPipeParams -Display -Title ('PipeParams on Entry Server:[{0}] Client: [{1}] Spawned: [{2}]' -f $ServerClientParams.Server, $ServerClientParams.Client, $ServerClientParams.Spawned)
 	}
-	
+
 	if($ServerClientParams.Server)
 	{
 		If (-Not $ServerClientParams.Spawned)
-		{	
+		{
 			If ($PSVersionTable.PSVersion.Major -gt [int]5)
 			{$Executable = Join-Path -Path ('{0}' -f $PSHome) -ChildPath 'pwsh.exe'}
 			else
@@ -154,7 +154,7 @@ Function Start-PipeServerOrClient
 				Argumentlist = $Private:ServerArgs
 			}
 			If ($ServerClientParams.$Strverbose)
-			{Show-VerboseData -Object $ProcessInfo -Display -Title 'ProcessInfo Starting the Server'}	
+			{Show-VerboseData -Object $ProcessInfo -Display -Title 'ProcessInfo Starting the Server'}
 			# Start the Server
 			Try
 			{
@@ -230,7 +230,7 @@ Function Start-PipeServerOrClient
 				# closes the handle on process exit; this is defence in depth). Closure captures the pipe reference.
 				$Private:PipeForExit = $ServerClientParams.$StrPipeInfo.$StrPipe
 				$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action ({
-						try { if ($PipeForExit) { $PipeForExit.Dispose() } } catch { $null = $_ }
+						try { if ($PipeForExit) { $PipeForExit.Dispose() } } catch { Write-MyCatchAudit -Source 'Start-PipeServerOrClient: dispose the pipe on an abnormal engine exit (PowerShell.Exiting handler) - defence in depth, the pipe/handle may already be gone' -ErrorRecord $_ -Teardown }
 					}.GetNewClosure())
 				# 0.13 PID hand-off: state + P/Invoke to read a connecting client's real (kernel-set) PID.
 				$Private:ExpectedHandinPid = [uint32]0
@@ -293,10 +293,11 @@ Function Start-PipeServerOrClient
 						$true
 					)
 					$ServerClientParams.$StrPipeInfo.$StrWriter.AutoFlush = $True
-					# Copy InfoDisplay, ChunkSize, Depth to PipeInfo so Send-Data/Receive-Data can access them
+					# Copy InfoDisplay, ChunkSize, Depth, ChunkReadTimeout to PipeInfo so Send-Data/Receive-Data can access them
 					$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
 					$ServerClientParams.$StrPipeInfo.$StrChunkSize = $ServerClientParams.$StrChunkSize
 					$ServerClientParams.$StrPipeInfo.$StrDepth = $ServerClientParams.$StrDepth
+					$ServerClientParams.$StrPipeInfo.$StrChunkReadTimeout = $ServerClientParams.$StrChunkReadTimeout
 					# === 0.11 hardening (4.2): capability-nonce handshake ===
 					# The client's FIRST line on a fresh connection must equal the nonce handed to this
 					# server at spawn. This gates admission WITHOUT pinning to a PID, so the VHDTools
@@ -395,7 +396,7 @@ Function Start-PipeServerOrClient
 								if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
 								{ Write-Host "DEBUG Stop-HealthPipe: Failed to cancel CTS: $($_.Exception.Message)" -ForegroundColor DarkYellow }
 							}
-							try { $HealthCts.Dispose() } catch { $null = $_ }
+							try { $HealthCts.Dispose() } catch { Write-MyCatchAudit -Source 'Stop-HealthPipe: dispose the health-pipe CancellationTokenSource during teardown - the token/handle may already be gone' -ErrorRecord $_ -Teardown }
 						}
 						if ($HealthPS)
 						{
@@ -411,7 +412,7 @@ Function Start-PipeServerOrClient
 							try { $HealthRunspace.Dispose() } catch { $null = $_ }
 						}
 					}
-				
+
 					# === Health pipe listener ===
 					# Start a background runspace that listens on PipeName.Health for PING/PONG
 					# health checks. Pipe security is built inside the runspace from the
@@ -424,13 +425,30 @@ Function Start-PipeServerOrClient
 					$HealthPipeName = $ServerClientParams.$StrPipeInfo.$StrName + '.Health'
 					# Include server identity so Stop-HealthPipe can connect back even when elevated
 					$Private:HealthAccess = @($ServerClientParams.$StrAccessIdentifier) + @('{0}:Allow:ReadWrite' -f [Security.Principal.WindowsIdentity]::GetCurrent().Name)
+					# 2026-09-11: resolved HERE, in the main runspace, since neither Write-HealthPipeCatchRecord's
+					# own file nor Get-MyCatchAuditPersistPath is callable from inside the bare health-pipe
+					# runspace below - only plain argument VALUES cross that boundary via .AddArgument(), not
+					# function definitions. See Write-HealthPipeCatchRecord.ps1's own .DESCRIPTION.
+					$Private:HealthCatchHelperPath = Join-Path -Path $PSScriptRoot -ChildPath 'Write-HealthPipeCatchRecord.ps1'
+					$Private:HealthPersistPath = Get-MyCatchAuditPersistPath
 					$HealthRunspace = [RunspaceFactory]::CreateRunspace()
 					$HealthCts = [System.Threading.CancellationTokenSource]::new()
 					$HealthRunspace.Open()
 					$HealthPS = [PowerShell]::Create()
 					$HealthPS.Runspace = $HealthRunspace
 					$null = $HealthPS.AddScript({
-							param($hpn, $acc, $psVer, $Cts)
+							param($hpn, $acc, $psVer, $Cts, $CatchHelperPath, $PersistPath)
+							# 2026-09-11: dot-source the cross-runspace-safe catch-audit helper into THIS
+							# runspace - Write-MyCatchAudit itself is not loaded here and could not capture
+							# anywhere useful even if it were (see Write-HealthPipeCatchRecord.ps1's own
+							# .DESCRIPTION). Defensive: if this ever fails (e.g. a bad deploy), the loop must
+							# still run with the pre-2026-09-11 silent fallback rather than THIS failure being
+							# what breaks the health pipe.
+							$CatchAuditAvailable = $false
+							# SILENT-OK: if the helper genuinely cannot be loaded (e.g. a bad deploy), the health
+							# pipe must still run with the pre-2026-09-11 silent fallback below - there is nothing
+							# else in this bare runspace that could report THIS specific failure.
+							try { . $CatchHelperPath; $CatchAuditAvailable = $true } catch { $null = $_ }
 							# Build pipe security inside the runspace from the AccessIdentifier string
 							# array. Building here avoids cross-runspace PipeSecurity object issues.
 							# 0.10 (hardening 4.1a): the empty-$acc fallback grants the CURRENT USER's own
@@ -528,13 +546,25 @@ Function Start-PipeServerOrClient
 										$hWriter.WriteLine('PONG:' + $msg.Substring(5))
 									}
 								}
-								catch { $null = $_ }
+								catch
+								{
+									if ($CatchAuditAvailable)
+									{ Write-HealthPipeCatchRecord -PersistPath $PersistPath -Source 'Health pipe listener: WaitForConnection/read/respond cycle' -ErrorRecord $_ }
+								}
 								finally
 								{
-									if ($pipe) { try { $pipe.Dispose() } catch { $null = $_ } }
+									if ($pipe)
+									{
+										try { $pipe.Dispose() }
+										catch
+										{
+											if ($CatchAuditAvailable)
+											{ Write-HealthPipeCatchRecord -PersistPath $PersistPath -Source 'Health pipe listener: dispose pipe instance during loop teardown' -ErrorRecord $_ -Teardown }
+										}
+									}
 								}
 							}
-						}).AddArgument($HealthPipeName).AddArgument($Private:HealthAccess).AddArgument($PSVersionTable.PSVersion.Major).AddArgument($HealthCts)
+						}).AddArgument($HealthPipeName).AddArgument($Private:HealthAccess).AddArgument($PSVersionTable.PSVersion.Major).AddArgument($HealthCts).AddArgument($Private:HealthCatchHelperPath).AddArgument($Private:HealthPersistPath)
 					$null = $HealthPS.BeginInvoke()
 					# === End health pipe listener ===
 
@@ -601,7 +631,7 @@ Function Start-PipeServerOrClient
 									{
 										Write-Host "DEBUG SERVER: Security request FAILED: $_" -ForegroundColor Red
 										$DataObject.$StrResult = 'An error Occured getting the Pipe Security information'
-										$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+										$DataObject.$StrError = NamedPipe\Get-MyError -Return
 									}
 								}
 								$StrExitPipe
@@ -616,7 +646,7 @@ Function Start-PipeServerOrClient
 										{Write-Host 'DEBUG SERVER: ExitPipe processing done' -ForegroundColor Green}
 									}
 									catch
-									{$DataObject.$StrError = NamedPipe\Get-MyErrors -Return}
+									{$DataObject.$StrError = NamedPipe\Get-MyError -Return}
 								}
 								$StrDisconnect
 								{
@@ -644,7 +674,7 @@ Function Start-PipeServerOrClient
 						catch
 						{
 							Write-Host "DEBUG SERVER: Exception in main loop: $_" -ForegroundColor Red
-							If ($DataObject) { $DataObject.$StrError = NamedPipe\Get-MyErrors -Return }
+							If ($DataObject) { $DataObject.$StrError = NamedPipe\Get-MyError -Return }
 						}
 						If ($ServerClientParams.$StrInfoDisplay -band 4)
 						{Write-Host 'DEBUG SERVER: About to Send-Data response back to client' -ForegroundColor Magenta}
@@ -699,7 +729,7 @@ Function Start-PipeServerOrClient
 				If ($DataObject.$StrServerPID) { $null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore }
 				$Private:ErrorMsg = $_.Exception.Message
 				$Private:StackTrace = $_.ScriptStackTrace
-				$Private:FullError = NamedPipe\Get-MyErrors -Return
+				$Private:FullError = NamedPipe\Get-MyError -Return
 
 				# Redact any drive-qualified (C:\...) or UNC (\\server\share\...) path, not just the
 				# author's development drive - a hardcoded 'D:\' silently redacted NOTHING on any other
@@ -734,16 +764,16 @@ Function Start-PipeServerOrClient
 				# Ensure proper cleanup of resources
 				if ($ServerClientParams.$StrPipeInfo.$StrReader)
 				{
-					try 
+					try
 					{$ServerClientParams.$StrPipeInfo.$StrReader.Dispose()}
-					catch 
+					catch
 					{}
 				}
 				if ($ServerClientParams.$StrPipeInfo.$StrWriter)
 				{
-					try 
+					try
 					{$ServerClientParams.$StrPipeInfo.$StrWriter.Dispose()}
-					catch 
+					catch
 					{}
 				}
 				if ($ServerClientParams.$StrPipeInfo.$StrPipe)
@@ -777,10 +807,11 @@ Function Start-PipeServerOrClient
 				$ServerClientParams.$StrPipeInfo.$StrReader = [IO.StreamReader]::new($ServerClientParams.$StrPipeInfo.$StrPipe)
 				$ServerClientParams.$StrPipeInfo.$StrWriter = [IO.StreamWriter]::new($ServerClientParams.$StrPipeInfo.$StrPipe)
 				$ServerClientParams.$StrPipeInfo.$StrWriter.AutoFlush = $True
-				# Copy InfoDisplay, ChunkSize, Depth to PipeInfo so Send-Data/Receive-Data can access them
+				# Copy InfoDisplay, ChunkSize, Depth, ChunkReadTimeout to PipeInfo so Send-Data/Receive-Data can access them
 				$ServerClientParams.$StrPipeInfo.$StrInfoDisplay = $ServerClientParams.$StrInfoDisplay
 				$ServerClientParams.$StrPipeInfo.$StrChunkSize = $ServerClientParams.$StrChunkSize
 				$ServerClientParams.$StrPipeInfo.$StrDepth = $ServerClientParams.$StrDepth
+				$ServerClientParams.$StrPipeInfo.$StrChunkReadTimeout = $ServerClientParams.$StrChunkReadTimeout
 				# 0.11 hardening (4.2): present the capability nonce as the FIRST line so the server admits us.
 				# A hand-off client (different PID) presenting the same nonce is admitted too.
 				If ($ServerClientParams.$StrHandin)
@@ -809,7 +840,7 @@ Function Start-PipeServerOrClient
 		{
 			Write-Host "DEBUG CLIENT: Exception during connection: $_" -ForegroundColor Red
 			$ServerClientParams.$StrPipeInfo.$StrError = $True
-			NamedPipe\Get-MyErrors -Return
+			NamedPipe\Get-MyError -Return
 		}
 		$ServerClientParams.$StrPipeInfo
 	}

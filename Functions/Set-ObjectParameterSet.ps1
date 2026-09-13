@@ -1,4 +1,4 @@
-﻿Function Set-ObjectParams
+﻿Function Set-ObjectParameterSet
 {
 	<#
 			.SYNOPSIS
@@ -9,7 +9,7 @@
 			own script before initiating the pipe server or client
 
 			.PARAMETER MyParameters
-			-MyParameters 
+			-MyParameters
 
 			This parameter is optional
 
@@ -20,7 +20,7 @@
 			-Dataset One of 'PipeParams', 'DataObject','ServerClientParams','SendRequestParams','PipeInfo'.
 
 			.EXAMPLE
-			Set-ObjectParams -MyParameters Value -Dataset Value
+			Set-ObjectParameterSet -MyParameters Value -Dataset Value
 			Sets up the requested dataset
 
 			.OUTPUTS
@@ -34,7 +34,7 @@
 		[Parameter(Mandatory,ParameterSetName = 'Either',HelpMessage = 'Please state the dataset to initialise')]
 		[validateset('PipeParams', 'DataObject','ServerClientParams','SendRequestParams','PipeInfo','MyOptions','BreakPoint')]
 		[validatescript({
-				$_ -imatch $StrPipeParams -or 
+				$_ -imatch $StrPipeParams -or
 				$_ -imatch $StrDataObject -or
 				$_ -imatch $StrMyOptions -or
 				$_ -imatch $StrServerClientParams -or
@@ -54,7 +54,7 @@
 	)
 	Switch ($Dataset)
 	{
-		$StrBreakpoint 
+		$StrBreakpoint
 		{
 			[Ordered] @{
 				BPInfo   = If ($BPList)
@@ -123,7 +123,11 @@
 				$StrServerWaitTimeout = if ($null -ne $MyParameters.$StrServerWaitTimeout)
 				{[int]$MyParameters.$StrServerWaitTimeout}
 				Else
-				{[int]60}  # Default time 60 
+				{[int]60}  # Default time 60
+				$StrChunkReadTimeout = if ($null -ne $MyParameters.$StrChunkReadTimeout)
+				{[int]$MyParameters.$StrChunkReadTimeout}
+				Else
+				{[int]30000}  # Default 30s - see DefineVariablesPipe.ps1 for why only the CHUNK-CONTINUATION read is bounded
 			}
 		}
 		$StrServerClientParams
@@ -137,14 +141,14 @@
 					{$MyParameters.$StrPipeName}
 					Else
 					{($pn = Get-NewPipeName)}
-					$StrPipeInfo = Set-ObjectParams -Dataset $StrPipeInfo -MyParameters $MyParameters -Server
-					$StrPipeParams = Set-ObjectParams -Dataset $StrPipeParams -MyParameters $MyParameters
+					$StrPipeInfo = Set-ObjectParameterSet -Dataset $StrPipeInfo -MyParameters $MyParameters -Server
+					$StrPipeParams = Set-ObjectParameterSet -Dataset $StrPipeParams -MyParameters $MyParameters
 					$StrAccessIdentifier = if ($MyParameters.$StrAccessIdentifier)
-					{$MyParameters.$StrAccessIdentifier| Test-UserOrGroupExists}
+					{$MyParameters.$StrAccessIdentifier| Test-AccessIdentifier}
 					Elseif ($Accesslist)
-					{$Accesslist | Test-UserOrGroupExists}
+					{$Accesslist | Test-AccessIdentifier}
 					else
-					{('{0}:Allow:ReadWrite' -f [Security.Principal.WindowsIdentity]::GetCurrent().Name) | Test-UserOrGroupExists}
+					{('{0}:Allow:ReadWrite' -f [Security.Principal.WindowsIdentity]::GetCurrent().Name) | Test-AccessIdentifier}
 					$StrWindowStyle = if ($MyParameters.$StrWindowStyle -imatch $StrWindowStyleList)
 					{$MyParameters.$StrWindowStyle}
 					Elseif ($MyOptions.$StrWindowStyle -imatch $StrWindowStyleList)
@@ -200,7 +204,13 @@
 					Elseif ($null -ne $MyOptions.$StrServerWaitTimeout)
 					{[int]$MyOptions.$StrServerWaitTimeout}
 					Else
-					{[int]60}  # Default time 60 
+					{[int]60}  # Default time 60
+					$StrChunkReadTimeout = if ($null -ne $MyParameters.$StrChunkReadTimeout)
+					{[int]$MyParameters.$StrChunkReadTimeout}
+					Elseif ($null -ne $MyOptions.$StrChunkReadTimeout)
+					{[int]$MyOptions.$StrChunkReadTimeout}
+					Else
+					{[int]30000}  # Default 30s - see DefineVariablesPipe.ps1 for why only the CHUNK-CONTINUATION read is bounded
 					$StrModuleToLoad = if ($MyParameters.$StrModuleToLoad)
 					{ $MyParameters.$StrModuleToLoad }
 					Elseif ($MyOptions.$StrModuleToLoad)
@@ -220,7 +230,7 @@
 					Else
 					{ $null }
 					# 0.11 hardening (4.2): capability nonce. Generated ONCE here at server-build time.
-					# The client build (Set-ObjectParams -Client, built FROM this ServerClientParams)
+					# The client build (Set-ObjectParameterSet -Client, built FROM this ServerClientParams)
 					# inherits the SAME value via $MyParameters.$StrNonce, so both ends share one secret.
 					$StrNonce = if ($MyParameters.$StrNonce)
 					{ $MyParameters.$StrNonce }
@@ -258,7 +268,7 @@
 					$StrPipeParams = if ($MyParameters.$StrPipeParams)
 					{$MyParameters.$StrPipeParams}
 					Else
-					{Set-ObjectParams -Dataset $StrPipeParams -MyParameters $MyParameters}
+					{Set-ObjectParameterSet -Dataset $StrPipeParams -MyParameters $MyParameters}
 					$StrInfoDisplay = if ($null -ne $MyParameters.$StrInfoDisplay)
 					{[int]$MyParameters.$StrInfoDisplay}
 					Elseif ($null -ne $MyOptions.$StrInfoDisplay)
@@ -300,7 +310,13 @@
 					Elseif ($null -ne $MyOptions.$StrServerWaitTimeout)
 					{[int]$MyOptions.$StrServerWaitTimeout}
 					Else
-					{[int]60}  # Default time 60 
+					{[int]60}  # Default time 60
+					$StrChunkReadTimeout = if ($null -ne $MyParameters.$StrChunkReadTimeout)
+					{[int]$MyParameters.$StrChunkReadTimeout}
+					Elseif ($null -ne $MyOptions.$StrChunkReadTimeout)
+					{[int]$MyOptions.$StrChunkReadTimeout}
+					Else
+					{[int]30000}  # Default 30s - see DefineVariablesPipe.ps1 for why only the CHUNK-CONTINUATION read is bounded
 					$StrModuleToLoad = if ($MyParameters.$StrModuleToLoad)
 					{ $MyParameters.$StrModuleToLoad }
 					Elseif ($MyOptions.$StrModuleToLoad)
@@ -377,7 +393,7 @@
 			# $MyParameters, NOT $ServerClientParams.
 			#
 			# Start-PipeSession builds this dataset with
-			#     Set-ObjectParams -Dataset SendRequestParams -MyParameters $Private:ServerClientParams
+			#     Set-ObjectParameterSet -Dataset SendRequestParams -MyParameters $Private:ServerClientParams
 			# so the ServerClientParams hashtable arrives as $MyParameters. This branch used to read a
 			# variable literally named $ServerClientParams, which is NOT a parameter of this function -
 			# it could only ever resolve by dynamic scope to the CALLER's variable, and the caller's is
@@ -406,7 +422,7 @@
 				{$MyParameters.$StrPipeInfo}
 				Else
 				{$Null}
-				$StrDataObject = Set-ObjectParams -Dataset $StrDataObject
+				$StrDataObject = Set-ObjectParameterSet -Dataset $StrDataObject
 			}
 		}
 		$StrPipeInfo

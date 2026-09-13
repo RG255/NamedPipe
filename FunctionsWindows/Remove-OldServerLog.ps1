@@ -27,7 +27,7 @@
 		$Private:Cutoff = (Get-Date).AddDays(-$RetentionDays)
 		Get-ChildItem -Path $Private:LogDir -Filter 'server-*.log' -File -ErrorAction SilentlyContinue |
 			Where-Object { $_.LastWriteTime -lt $Private:Cutoff } |
-			ForEach-Object { try { Remove-Item -Path $_.FullName -Force -ErrorAction Stop } catch { $null = $_ } }
+			ForEach-Object { try { Remove-Item -Path $_.FullName -Force -ErrorAction Stop } catch { Write-MyCatchAudit -Source 'Remove-OldServerLog: delete one expired log file - best-effort retention cleanup, one locked/undeletable file must not stop the rest' -ErrorRecord $_ } }
 	}
-	catch { $null = $_ }
+	catch { Write-MyCatchAudit -Source 'Remove-OldServerLog: best-effort log-retention sweep - a failure here (e.g. cannot enumerate the log folder) just means old logs are not pruned this run' -ErrorRecord $_ }
 }

@@ -90,6 +90,16 @@
 			Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Receive-Data: Deserialized OK" -ForegroundColor Green
 		}
 
+		# ConvertFrom-Serial's -Text path (unlike its -Chunk path) never legitimately returns
+		# $null - a Base64/JSON payload that fails to deserialize is the only way $received
+		# ends up $null here, and without this check that silently fell through to the
+		# non-chunked "else" below (since $null.IsChunked -eq $true is $false), producing a
+		# $DataObject of $null with no Error set - the one gap the checksum-mismatch path below
+		# does NOT have (that one already throws and is caught by the outer Catch). Throwing
+		# here routes it through the same established Catch -> $StrError convention.
+		if ($null -eq $received)
+		{ throw "Failed to deserialize received data." }
+
 		# Check if this is a chunk object
 		if ($received.IsChunked -eq $true)
 		{
@@ -106,10 +116,22 @@
 			# Process first chunk
 			$DataObject = ConvertFrom-Serial -Chunk $received
 
-			# Keep reading until we get the complete object
+			# Keep reading until we get the complete object. Bounded (unlike the FIRST read
+			# above, which stays unbounded on purpose - see ChunkReadTimeout's own definition
+			# in DefineVariablesPipe.ps1): once the sender has already started streaming a
+			# chunked transfer, there is no legitimate reason for a large gap before the NEXT
+			# chunk - it is already computed, just being written. A stall here means the sender
+			# broke mid-transfer, not that some slow operation is still in progress. Falls back
+			# to 30s when PipeInfo carries no ChunkReadTimeout (e.g. a PipeInfo built by hand,
+			# as several tests do), matching Set-ObjectParameterSet' own default for this field.
 			while ($null -eq $DataObject)
 			{
-				$line = $PipeInfo.$StrReader.ReadLine()
+				$Private:_chunkTimeoutMs = if ($null -ne $PipeInfo.$StrChunkReadTimeout)
+				{ [int]$PipeInfo.$StrChunkReadTimeout } Else { 30000 }
+				$Private:_lineTask = $PipeInfo.$StrReader.ReadLineAsync()
+				If (-not $Private:_lineTask.Wait($Private:_chunkTimeoutMs))
+				{ throw "Receive-Data: timed out after $Private:_chunkTimeoutMs ms waiting for the next chunk of transfer $transferId." }
+				$line = $Private:_lineTask.Result
 				$chunk = ConvertFrom-Serial -Text $line
 
 				if ($chunk.IsChunked -and $chunk.TransferId -eq $transferId)
@@ -159,13 +181,13 @@
 		if (-not $DataObject)
 		{
 			$DataObject = @{
-				$StrError = NamedPipe\Get-MyErrors -Return
+				$StrError = NamedPipe\Get-MyError -Return
 			}
 		}
 		else
 		{
 			$null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore
-			$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+			$DataObject.$StrError = NamedPipe\Get-MyError -Return
 		}
 	}
 

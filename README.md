@@ -25,13 +25,13 @@ Deploy with the repo's standard deployment script (installs to the admin-only, A
 Program Files module path):
 
 ```powershell
-powershell.exe -NoProfile -File "D:\PowerShellScripts\Modules\Deploy-Modules.ps1" -Module NamedPipe -Version 0.13
+powershell.exe -NoProfile -File "D:\PowerShellScripts\Modules\Deploy-Modules.ps1" -Module NamedPipe -Version 0.14
 ```
 
 Then import:
 
 ```powershell
-Import-Module NamedPipe -RequiredVersion 0.13
+Import-Module NamedPipe -RequiredVersion 0.14
 ```
 
 ## Documentation

@@ -11,10 +11,10 @@
 
 		If the DataObject contains a Parameters property, these are appended to the
 		scriptblock as arguments. Parameters can be a string or a hashtable (converted
-		via ConvertTo-Parameters with injection-resistant escaping).
+		via ConvertTo-ParameterSet with injection-resistant escaping).
 
 		Security: Validates scriptblock syntax before execution to detect malformed
-		or suspicious commands. String parameters are escaped by ConvertTo-Parameters
+		or suspicious commands. String parameters are escaped by ConvertTo-ParameterSet
 		to prevent code injection.
 
 		.PARAMETER DataObject
@@ -55,7 +55,7 @@
 	{
 		$Private:ErrorActionPreferenceSave = $ErrorActionPreference
 		Switch ($PsCmdlet.ParameterSetName)
-		{	
+		{
 			'Command'
 			{$Private:Request = $Command}
 			'DataObject'
@@ -70,8 +70,8 @@
 				{$Private:MyArgs = '{0}' -f $DataObject.$StrParameters}
 				'hashtable'
 				{
-					# ConvertTo-Parameters sanitizes values with proper quote escaping
-					$Private:MyArgs = ConvertTo-Parameters -Hash $DataObject.$StrParameters
+					# ConvertTo-ParameterSet sanitizes values with proper quote escaping
+					$Private:MyArgs = ConvertTo-ParameterSet -Hash $DataObject.$StrParameters
 				}
 			}
 			$Private:SBText = '{0} {1}' -f $Private:Request, $Private:MyArgs
@@ -148,7 +148,7 @@
 		#    it fires on SUCCESS. -ErrorAction SilentlyContinue still records to $Error, so any server
 		#    function that enumerates a filesystem (C:\PerfLogs, $Recycle.Bin\S-1-5-18 ...) leaves records
 		#    behind. Measured: one suppressed enumeration = 1 record; a depth-2 walk of C:\ = 14. Each
-		#    formats to ~660 chars via Get-MyErrors, which dumps the WHOLE $Error list with stack traces.
+		#    formats to ~660 chars via Get-MyError, which dumps the WHOLE $Error list with stack traces.
 		#    A successful request would have come back with a populated Error and a payload growing with
 		#    the size of the walk (~645 KB at 1000 records).
 		#
@@ -208,7 +208,7 @@
 	Catch
 	{
 		$ErrorActionPreference = $Private:ErrorActionPreferenceSave
-		$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+		$DataObject.$StrError = NamedPipe\Get-MyError -Return
 	}
 	Finally
 	{

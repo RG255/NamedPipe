@@ -10,22 +10,22 @@
 Param ()
 
 Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module NamedPipe -RequiredVersion 0.13 -Force -ErrorAction Stop
+Import-Module NamedPipe -RequiredVersion 0.14 -Force -ErrorAction Stop
 
 $pass = $true
 function Check($l, $c) { if ($c) { Write-Host "[PASS] $l" -ForegroundColor Green } else { Write-Host "[FAIL] $l" -ForegroundColor Red; $script:pass = $false } }
 
 # Build a SERVER with a short ClientConnectTimeout so the budget (=CCT+2000) is ~5s, then spawn WITHOUT a client.
-$mo = Set-ObjectParams -Dataset $StrMyOptions -MyParameters @{}
+$mo = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{}
 $mo.$StrClientConnectTimeout = 3000
 $mo.$StrWindowStyle          = $StrHidden
 $mo.$StrAccessIdentifier     = @(('{0}:Allow:ReadWrite' -f [Security.Principal.WindowsIdentity]::GetCurrent().Name))
-$scp = Set-ObjectParams -Server -Dataset $StrServerClientParams -MyParameters $mo
+$scp = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $mo
 $pipeName = $scp.$StrPipeInfo.$StrName
 
 Write-Host ("`n=== Connect-deadline test (budget ~{0}ms, pipe {1}) ===" -f ($mo.$StrClientConnectTimeout + 2000), $pipeName) -ForegroundColor Magenta
 
-$mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.13' } | Select-Object -First 1
+$mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.14' } | Select-Object -First 1
 $sw  = [System.Diagnostics.Stopwatch]::StartNew()
 $srvPid = $mod.Invoke({ param($d) Start-PipeServerOrClient -SerialData $d }, (ConvertTo-Serial -Object $scp))
 $srvPid = [int]($srvPid | Select-Object -Last 1)

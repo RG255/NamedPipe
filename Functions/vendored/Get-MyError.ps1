@@ -1,5 +1,5 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Get-MyErrors.ps1 by Sync-SharedUtilities [SHA256 7AC45CE9830B9DD9320AA33F40339ED7941409BDF20B533D0D9A58325E79BDF0] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
-Function Get-MyErrors
+﻿# VENDORED from CommonScripts\0.2\Functions\Get-MyError.ps1 by Sync-SharedUtilities [SHA256 8C3339D1EF1498D0D794B1197476A850F4739954385DE08BCB2F941D7940032B] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+Function Get-MyError
 {
 	<#
 		.SYNOPSIS
@@ -57,28 +57,50 @@ Function Get-MyErrors
 		MaxErrors/MaxStackTraceLength defaults should normally stay well under this.
 
 		.EXAMPLE
-		Get-MyErrors -Return
+		Get-MyError -Return
 		Returns the most recent errors (bounded) as a formatted string.
 
 		.EXAMPLE
-		Get-MyErrors -Return -PreserveErrors
+		Get-MyError -Return -PreserveErrors
 		Returns errors as a formatted string without clearing the error collection.
 
 		.EXAMPLE
-		Get-MyErrors -Return -MaxErrors 25 -MaxStackTraceLength 5000
+		Get-MyError -Return -MaxErrors 25 -MaxStackTraceLength 5000
 		Widens the caps for a deeper one-off diagnostic dump.
 
+		.PARAMETER AsObject
+		Returns one [PSCustomObject] per processed error instead of (or alongside - both switches are
+		independent) the formatted text -Return produces. Added 2026-09-07 so a caller can actually
+		DO something with a caught error programmatically (e.g. group a batch of captures by
+		ExceptionType to spot which ones are genuinely recurring bugs) instead of parsing the text
+		block back apart. Reuses the EXACT SAME extraction/transform/truncation as the text path (one
+		pass over $Global:Error, not two) - the two outputs can never drift apart from each other, and
+		-MaxErrors/-MaxStackTraceLength bound this path identically to the text path (MaxErrors already
+		caps the COUNT of objects returned via the same loop control; MaxStackTraceLength caps the one
+		field most likely to be unexpectedly huge, same as today). No separate total-size backstop is
+		needed here the way -MaxTotalLength exists for the text path - a list of small, already
+		field-capped objects cannot balloon into the same runaway-string shape the 2026-08-29 OOM
+		incident hit, since there is no repeated padding/formatting overhead being concatenated.
+		Object properties: Number, LineNo, Offset, Line, TargetObject, FullErrorId, Message,
+		CommandPath, ExceptionType, FullErrorReason, StackTrace.
+
+		.EXAMPLE
+		Get-MyError -AsObject | Group-Object ExceptionType | Sort-Object Count -Descending
+		Groups a batch of captured errors by exception type to see which ones recur most.
+
 		.NOTES
-		Version: 1.28 2026-08-29
+		Version: 1.29 2026-09-07
 
 		.OUTPUTS
 		System.String - When -Return is specified, returns formatted error text.
+		PSCustomObject[] - When -AsObject is specified, returns one object per processed error.
 	#>
 
 	[CmdletBinding(PositionalBinding = $False)]
 	Param (
 		[Int]$Indent = [int]5,
 		[Switch]$Return,
+		[Switch]$AsObject,
 		[Switch]$PreserveErrors,
 		[String]$PathToLogFile = '',
 		[Int]$MaxErrors = 10,
@@ -92,6 +114,7 @@ Function Get-MyErrors
 	$Private:ErrorNumber    = $Private:NumberOfErrors - 1
 	$Local:InternalError    = $True
 	$Private:Err            = [System.Text.StringBuilder]''
+	$Private:Objects        = [System.Collections.Generic.List[PSCustomObject]]::new()
 	$Private:Shown          = [int]0
 	$Private:LengthCapped   = $False
 
@@ -101,18 +124,20 @@ Function Get-MyErrors
 		ParamTrail = ': '
 	}
 
-	# Property mapping table
+	# Property mapping table. PropName is the object-safe identifier used ONLY by -AsObject (Name is
+	# the human-readable label used ONLY by the text path) - kept as separate keys so neither path's
+	# needs constrain the other's wording.
 	$Private:PropertyMap = @(
-		@{ Name = 'Line No.';          Path = 'InvocationInfo.ScriptLineNumber' }
-		@{ Name = 'Offset';            Path = 'InvocationInfo.OffsetInLine' }
-		@{ Name = 'Line';              Path = 'InvocationInfo.Line' }
-		@{ Name = 'Target Object';     Path = 'TargetObject' }
-		@{ Name = 'Full Error ID';     Path = 'FullyQualifiedErrorId' }
-		@{ Name = 'Message';           Path = 'Exception.Message'; Transform = { $_.Replace("`r`n", '') } }
-		@{ Name = 'Command Path';      Path = 'InvocationInfo.PSCommandPath' }
-		@{ Name = 'Exception Type';    Path = 'Exception'; Transform = { $_.GetType().FullName } }
-		@{ Name = 'Full Error Reason'; Path = 'FullyQualifiedErrorId'; Transform = { ($_ -split ',')[0] } }
-		@{ Name = 'Stack Trace';       Path = 'ScriptStackTrace' }
+		@{ Name = 'Line No.';          PropName = 'LineNo';          Path = 'InvocationInfo.ScriptLineNumber' }
+		@{ Name = 'Offset';            PropName = 'Offset';          Path = 'InvocationInfo.OffsetInLine' }
+		@{ Name = 'Line';              PropName = 'Line';            Path = 'InvocationInfo.Line' }
+		@{ Name = 'Target Object';     PropName = 'TargetObject';    Path = 'TargetObject' }
+		@{ Name = 'Full Error ID';     PropName = 'FullErrorId';     Path = 'FullyQualifiedErrorId' }
+		@{ Name = 'Message';           PropName = 'Message';         Path = 'Exception.Message'; Transform = { $_.Replace("`r`n", '') } }
+		@{ Name = 'Command Path';      PropName = 'CommandPath';     Path = 'InvocationInfo.PSCommandPath' }
+		@{ Name = 'Exception Type';    PropName = 'ExceptionType';   Path = 'Exception'; Transform = { $_.GetType().FullName } }
+		@{ Name = 'Full Error Reason'; PropName = 'FullErrorReason'; Path = 'FullyQualifiedErrorId'; Transform = { ($_ -split ',')[0] } }
+		@{ Name = 'Stack Trace';       PropName = 'StackTrace';      Path = 'ScriptStackTrace' }
 	)
 
 	$Private:Number = [int]1
@@ -124,7 +149,11 @@ Function Get-MyErrors
 		# Error header
 		$null = $Private:Err.AppendLine((Format-MyTextLine -IndentLen 0 -ParamLen 9 -Parameter ("`r`nError No") -Text ('{0}' -f $Private:Number)))
 
-		# Process each property from the mapping table
+		# Process each property from the mapping table. $Private:_objRecord accumulates the SAME
+		# extracted/transformed/truncated values the text path below uses - built unconditionally (not
+		# just when -AsObject is passed) so both output shapes always come from one single pass and can
+		# never disagree with each other.
+		$Private:_objRecord = [ordered]@{ Number = $Private:Number }
 		foreach ($Private:Prop in $Private:PropertyMap)
 		{
 			$Private:Value = $Private:CurrentError
@@ -148,6 +177,8 @@ Function Get-MyErrors
 					$Private:Text = '{0} ...(truncated, {1} more char(s))' -f $Private:Text.Substring(0, $MaxStackTraceLength), $Private:OmittedChars
 				}
 
+				$Private:_objRecord[$Private:Prop.PropName] = $Private:Text
+
 				$null = $Private:Err.AppendLine((
 					Format-MyTextLine -ErrorAction SilentlyContinue @Private:Params `
 						-Parameter $Private:Prop.Name `
@@ -155,6 +186,7 @@ Function Get-MyErrors
 				))
 			}
 		}
+		$Private:Objects.Add([PSCustomObject]$Private:_objRecord)
 
 		# Handle internal errors during processing
 		if ([int]$Global:Error.Count -gt $Private:NumberOfErrors -and $Local:InternalError)
@@ -214,4 +246,7 @@ Function Get-MyErrors
 
 	if ($Return)
 	{ $Private:Err.ToString() }
+
+	if ($AsObject)
+	{ $Private:Objects.ToArray() }
 }

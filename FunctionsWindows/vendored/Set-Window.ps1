@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-Window.ps1 by Sync-SharedUtilities [SHA256 4097B406387862656BFED164550E2D0EF43616D410A9997ED7B0D307A5DB987D] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-Window.ps1 by Sync-SharedUtilities [SHA256 5DE30098607AAAC1E5CD0D17A86116A040EF2A78E68EE6A855BEB64AA0A3E17C] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Set-Window
 {
 	<#
@@ -139,6 +139,13 @@ Function Set-Window
 		{ $null = [Window] }
 		catch
 		{
+			# 2026-09-11: only audit an UNEXPECTED exception type here - a RuntimeException ("Unable to
+			# find type [Window]") is the routine, expected outcome of this probe on every first use in a
+			# fresh process (Add-Type is per-process), so auditing it every time was pure log noise, not
+			# a signal of anything worth reviewing. $Global:Error.Clear() and the compile below still run
+			# unconditionally either way - only the audit call is gated.
+			if ($_.Exception -isnot [System.Management.Automation.RuntimeException])
+			{ Write-MyCatchAudit -Source 'Set-Window: [Window] type probe failed with an unexpected exception - not the routine "not yet loaded" case' -ErrorRecord $_ }
 			if ($Global:Error.Count -eq [int]1)
 			{ $Global:Error.Clear() }
 			Publish-SetWindowCode
@@ -504,7 +511,7 @@ Function Set-Window
 			if (-not [uint32]::TryParse($ProcessId, [ref]$TargetPid))
 			{ return $Found }
 
-			foreach ($Entry in (Get-ChildWindowHandles -ParentHandle ([System.IntPtr]::Zero)))
+			foreach ($Entry in (Get-ChildWindowHandle -ParentHandle ([System.IntPtr]::Zero)))
 			{
 				$HandleText, $Title = $Entry -split ',', 2
 				if ([String]::IsNullOrWhiteSpace($Title))
@@ -593,6 +600,8 @@ Function Set-Window
 					else
 					{ $WindowObject = & $SWScriptPath -Passthru -ProcessId $ProcessIds }
 				}
+				Else
+				{ Write-MyCatchAudit -Source 'Set-Window: Set-Window command unavailable AND fallback script file not found - $WindowObject left at its previous (pre-Set) value' -ErrorRecord $_ }
 			}
 			# The set path re-reads a single window; make it the sole result.
 			$WindowResults.Clear()

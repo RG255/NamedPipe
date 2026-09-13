@@ -56,15 +56,15 @@
 	#>
 	Try
 	{
-		if ($PSVersionTable.PSVersion.Major -gt 5) 
+		if ($PSVersionTable.PSVersion.Major -gt 5)
 		{$PipeSecurity = New-Object -TypeName System.IO.Pipes.PipeSecurity}
 		Else
 		{$PipeSecurity  = [IO.Pipes.PipeSecurity]::new()}
-		for ($x = 0; $x -lt $AccessIdentifier.count ; $x ++) 
+		for ($x = 0; $x -lt $AccessIdentifier.count ; $x ++)
 		{
 			$Item = $AccessIdentifier[$x]
 			$IDAccess = $Item.split(':')
-			if ($PSVersionTable.PSVersion.Major -gt 5) 
+			if ($PSVersionTable.PSVersion.Major -gt 5)
 			{
 				Switch ($IDAccess.count)
 				{
@@ -78,7 +78,7 @@
 				$PipeSecurity.AddAccessRule($AccessRule)
 			}
 			else
-			{				
+			{
 				Switch ($IDAccess.count)
 				{
 					'1'
@@ -89,8 +89,8 @@
 					{$PipeSecurity.AddAccessRule([IO.Pipes.PipeAccessRule]::new($IDAccess[0],$IDAccess[2], $IDAccess[1]))}
 				}
 			}
-		}	
-	}	
+		}
+	}
 	Catch
 	{
 		# Error creating pipe security - throw to caller for handling

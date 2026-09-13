@@ -35,7 +35,7 @@ BeforeAll {
 	# This keeps the suite self-consistent: the "should NOT be exported" assertions further down
 	# stay true, and these functions are still exercised. Set-Window is deliberately absent - it
 	# was removed in 0.12.
-	foreach ($Private:Fn in 'Get-NewPipeName', 'Test-UserOrGroupExists', 'Set-MyWindowState',
+	foreach ($Private:Fn in 'Get-NewPipeName', 'Test-AccessIdentifier', 'Set-MyWindowState',
 		'Assert-File', 'Assert-Folder')
 	{
 		$Private:Body = '& (Get-Module NamedPipe) ([scriptblock]::Create(''{0} @args'')) @args' -f $Private:Fn
@@ -57,9 +57,9 @@ Describe 'Module Import' {
 		Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
 	}
 
-	It 'Should be version 0.13' {
+	It 'Should be version 0.14' {
 		$Module = Get-Module -Name NamedPipe
-		$Module.Version.ToString() | Should -Be '0.13'
+		$Module.Version.ToString() | Should -Be '0.14'
 	}
 
 	It 'Should have a valid module version' {
@@ -467,7 +467,7 @@ Describe 'Get-ChunkBufferStatus' {
 	}
 }
 
-Describe 'Get-MyErrors' {
+Describe 'Get-MyError' {
 	BeforeEach {
 		$Global:Error.Clear()
 	}
@@ -478,13 +478,13 @@ Describe 'Get-MyErrors' {
 
 	Context 'Basic Functionality' {
 		It 'Should return empty when no errors exist' {
-			$Result = Get-MyErrors -Return
+			$Result = Get-MyError -Return
 			$Result | Should -BeNullOrEmpty
 		}
 
 		It 'Should capture and format errors' {
 			try { Get-Item 'C:\NonExistent\Path\File.txt' -ErrorAction Stop } catch {}
-			$Result = Get-MyErrors -Return -PreserveErrors
+			$Result = Get-MyError -Return -PreserveErrors
 			$Result | Should -Not -BeNullOrEmpty
 			$Result | Should -Match 'Error No'
 		}
@@ -493,14 +493,14 @@ Describe 'Get-MyErrors' {
 			try { Get-Item 'C:\NonExistent\Path\File.txt' -ErrorAction Stop } catch {}
 			$Global:Error.Count | Should -BeGreaterThan 0
 
-			$Null = Get-MyErrors -Return
+			$Null = Get-MyError -Return
 			$Global:Error.Count | Should -Be 0
 		}
 
 		It 'Should preserve errors when -PreserveErrors is specified' {
 			try { Get-Item 'C:\NonExistent\Path\File.txt' -ErrorAction Stop } catch {}
 			$InitialCount = $Global:Error.Count
-			$Null = Get-MyErrors -Return -PreserveErrors
+			$Null = Get-MyError -Return -PreserveErrors
 			$Global:Error.Count | Should -Be $InitialCount
 		}
 	}
@@ -508,17 +508,17 @@ Describe 'Get-MyErrors' {
 	Context 'Parameters' {
 		It 'Should accept custom Indent parameter' {
 			try { Get-Item 'C:\NonExistent\Path\File.txt' -ErrorAction Stop } catch {}
-			{ Get-MyErrors -Return -Indent 10 } | Should -Not -Throw
+			{ Get-MyError -Return -Indent 10 } | Should -Not -Throw
 		}
 
-		# -LinePad does NOT exist on Get-MyErrors (params are Indent/Return/PreserveErrors/
+		# -LinePad does NOT exist on Get-MyError (params are Indent/Return/PreserveErrors/
 		# PathToLogFile) and this test asserted it did not throw, so it failed permanently.
 		# The function's comment-based help still documents a .PARAMETER LinePad - that help is
 		# stale in the CommonScripts master too. Assert the real contract instead: an unknown
 		# parameter MUST be rejected.
 		It 'Should reject a parameter it does not have' {
 			try { Get-Item 'C:\NonExistent\Path\File.txt' -ErrorAction Stop } catch {}
-			{ Get-MyErrors -Return -LinePad 10 } | Should -Throw
+			{ Get-MyError -Return -LinePad 10 } | Should -Throw
 		}
 	}
 }
@@ -557,7 +557,7 @@ Describe 'Format-MyTextLine' {
 	}
 }
 
-Describe 'Set-ObjectParams' {
+Describe 'Set-ObjectParameterSet' {
 	Context 'Basic Parameter Setting' {
 		It 'Should create object from dataset definition' {
 			# This test depends on module variables being set
@@ -566,7 +566,7 @@ Describe 'Set-ObjectParams' {
 				Set-ItResult -Skipped -Because 'Module variables not available'
 			}
 
-			{ Set-ObjectParams -Dataset $Script:StrMyOptions } | Should -Not -Throw
+			{ Set-ObjectParameterSet -Dataset $Script:StrMyOptions } | Should -Not -Throw
 		}
 	}
 }
@@ -618,32 +618,32 @@ Describe 'Get-NewPipeName' {
 	}
 }
 
-Describe 'Test-UserOrGroupExists' {
+Describe 'Test-AccessIdentifier' {
 	# Note: This function expects IDList in format "name:Allow:ReadWrite"
 	Context 'User Validation' {
 		It 'Should validate current user with full format' {
 			$CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 			$UserName = $CurrentUser.Split('\')[-1]
 			# Must pass full format: name:Allow:ReadWrite
-			$Result = Test-UserOrGroupExists -IDList "$UserName`:Allow:ReadWrite"
+			$Result = Test-AccessIdentifier -IDList "$UserName`:Allow:ReadWrite"
 			$Result | Should -Not -BeNullOrEmpty
 			$Result | Should -Match $UserName
 		}
 
 		It 'Should throw for non-existent user' {
-			{ Test-UserOrGroupExists -IDList 'NonExistentUser12345XYZ:Allow:ReadWrite' } | Should -Throw
+			{ Test-AccessIdentifier -IDList 'NonExistentUser12345XYZ:Allow:ReadWrite' } | Should -Throw
 		}
 	}
 
 	Context 'Group Validation' {
 		It 'Should validate Administrators group' {
-			$Result = Test-UserOrGroupExists -IDList 'Administrators:Allow:ReadWrite'
+			$Result = Test-AccessIdentifier -IDList 'Administrators:Allow:ReadWrite'
 			$Result | Should -Not -BeNullOrEmpty
 			$Result | Should -Match 'Administrators'
 		}
 
 		It 'Should validate Users group' {
-			$Result = Test-UserOrGroupExists -IDList 'Users:Allow:ReadWrite'
+			$Result = Test-AccessIdentifier -IDList 'Users:Allow:ReadWrite'
 			$Result | Should -Not -BeNullOrEmpty
 			$Result | Should -Match 'Users'
 		}
@@ -752,10 +752,334 @@ Describe 'Send-Data and Receive-Data' -Tag 'Integration' {
 
 		It 'Default ChunkSize should be safe for default buffer sizes' {
 			$DefaultChunkSize = 32768  # 32KB
-			$PipeBufferSize = 65536    # 64KB as defined in Set-ObjectParams
+			$PipeBufferSize = 65536    # 64KB as defined in Set-ObjectParameterSet
 			# With Base64 overhead, chunk becomes ~44KB which fits in 64KB buffer
 			$EstimatedWithOverhead = [math]::Ceiling($DefaultChunkSize * 1.4)
 			$EstimatedWithOverhead | Should -BeLessOrEqual $PipeBufferSize
+		}
+	}
+}
+
+Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
+	# The rest of this file's chunking/checksum coverage exercises ConvertTo-Serial/
+	# ConvertFrom-Serial directly - the serialization layer - but never Receive-Data itself,
+	# which is internal (not exported, see 'Receive-Data should not be exported' above) and
+	# owns the ReadLine/IsChunked branching this Describe targets. Added 2026-09-10 alongside a
+	# fix for one specific gap found in that branching (see the last Context below).
+	#
+	# CONCURRENCY NOTE (found live building this Describe): running Receive-Data - a NamedPipe
+	# module call - on a background thread (first tried via Start-ThreadJob) WHILE the main
+	# thread also calls NamedPipe module functions (ConvertTo-Serial) corrupted shared module
+	# state across the two threads (an intermittent, unreproducible "depth parameter must be >= 1"
+	# error out of PSSerializer) - ThreadJob runspaces share this process's AppDomain, and this
+	# module is not verified thread-safe for that. Separately, Start-ThreadJob itself is not even
+	# available under Windows PowerShell 5.1 on this machine (it needs the ThreadJob module,
+	# built into pwsh.exe but not into powershell.exe) - NamedPipe runs its suite under BOTH
+	# hosts, and the PS5.1 run failed all 5 of these tests with "Start-ThreadJob is not
+	# recognized" until this was fixed too. Fix for both: only the MAIN thread ever calls into the
+	# NamedPipe module - it calls Receive-Data directly (blocking, resolved once via Get-Command
+	# since Receive-Data is internal). Every line to send is pre-serialized on the main thread
+	# FIRST (sequential, no concurrency hazard), then handed to a background Runspace + PowerShell
+	# instance (the same technique the Health Pipe Protocol tests above already use, available on
+	# both PS5.1 and PS7) that does ONLY raw .NET StreamWriter.WriteLine calls - no PowerShell
+	# module code at all, so nothing there can race. A named pipe with no buffer negotiated also
+	# blocks a Write until a Read is already pending on the other end (found the same way - the
+	# first version of this Describe wrote before anything was reading and deadlocked), which is
+	# exactly why the write always happens
+	# on the background thread while Receive-Data (the pending read) runs on the main thread.
+
+	BeforeAll {
+		$Script:RDBase = 'NP_ReceiveDataTest_' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+
+		$Script:RDServer = [System.IO.Pipes.NamedPipeServerStream]::new(
+			$Script:RDBase, [System.IO.Pipes.PipeDirection]::InOut, 1
+		)
+		$Script:RDConnectTask = $Script:RDServer.WaitForConnectionAsync()
+		$Script:RDClient = [System.IO.Pipes.NamedPipeClientStream]::new(
+			'.', $Script:RDBase, [System.IO.Pipes.PipeDirection]::InOut
+		)
+		$Script:RDClient.Connect(2000)
+		$null = $Script:RDConnectTask.Wait(2000)
+
+		$Script:RDServerReader = [System.IO.StreamReader]::new($Script:RDServer)
+		$Script:RDServerWriter = [System.IO.StreamWriter]::new($Script:RDServer)
+		$Script:RDServerWriter.AutoFlush = $true
+		$Script:RDClientWriter = [System.IO.StreamWriter]::new($Script:RDClient)
+		$Script:RDClientWriter.AutoFlush = $true
+
+		# Literal key strings, same reasoning as the Health Pipe Protocol FakePipeInfo above:
+		# Receive-Data reads $PipeInfo.$StrReader/$StrInfoDisplay, and the module's own $Str*
+		# variables are not accessible from ordinary Pester test scope.
+		$Script:RDPipeInfo = [PSCustomObject]@{
+			Reader      = $Script:RDServerReader
+			Writer      = $Script:RDServerWriter
+			InfoDisplay = 0
+		}
+
+		# Receive-Data is internal (not exported) - resolve it once inside the module, same
+		# pattern the Send-Data tests above already use for another internal function.
+		$Script:RDReceiveDataCmd = & (Get-Module NamedPipe) { Get-Command Receive-Data }
+
+		# Helper functions must be defined HERE, inside BeforeAll, not loose in the Describe
+		# body - Pester 5 runs a Describe body at DISCOVERY time in a different scope than the
+		# RUN phase that executes It blocks, so a bare "function" statement at Describe level is
+		# invisible by the time an It block tries to call it (found live: every It below failed
+		# with "term ... is not recognized" until these moved in here).
+		function Script:Send-RDLinesInBackground([String[]]$Lines)
+		{
+			# Raw .NET only, deliberately - see the CONCURRENCY NOTE above. Uses a separate
+			# Runspace + PowerShell instance (same technique the Health Pipe Protocol tests above
+			# already use for their background server), NOT Start-ThreadJob - ThreadJob is not
+			# available under Windows PowerShell 5.1 on this machine (found live: NamedPipe runs
+			# its suite under both powershell.exe and pwsh.exe, and the PS5.1 run failed all 5 of
+			# these tests with "Start-ThreadJob is not recognized").
+			$Private:RS = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+			$Private:RS.Open()
+			$Private:PS = [System.Management.Automation.PowerShell]::Create()
+			$Private:PS.Runspace = $Private:RS
+			[void]$Private:PS.AddScript({
+					Param($Writer, $Lines)
+					Start-Sleep -Milliseconds 100
+					foreach ($L in $Lines) { $Writer.WriteLine($L) }
+				})
+			[void]$Private:PS.AddArgument($Script:RDClientWriter)
+			[void]$Private:PS.AddArgument($Lines)
+			[PSCustomObject]@{
+				PS    = $Private:PS
+				RS    = $Private:RS
+				Async = $Private:PS.BeginInvoke()
+			}
+		}
+
+		function Script:Wait-RDJob($Job)
+		{
+			try { $null = $Job.PS.EndInvoke($Job.Async) } catch { $null = $_ }
+			try { $Job.PS.Dispose() } catch { }
+			try { $Job.RS.Close(); $Job.RS.Dispose() } catch { }
+		}
+	}
+
+	AfterAll {
+		foreach ($D in @($Script:RDClient, $Script:RDServer))
+		{ try { if ($D) { $D.Dispose() } } catch { } }
+	}
+
+	Context 'Single (non-chunked) message' {
+		It 'Receives a plain single message and reassembles it unchanged' {
+			$Original = [PSCustomObject]@{ Greeting = 'hello'; Number = 42 }
+			$Line = ConvertTo-Serial -Object $Original -ChunkSize 0
+			$Job = Send-RDLinesInBackground -Lines @($Line)
+
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+
+			$Result.Greeting | Should -Be 'hello'
+			$Result.Number   | Should -Be 42
+			$Result.Error    | Should -BeNullOrEmpty
+		}
+	}
+
+	Context 'Multi-chunk message' {
+		It 'Reassembles a message sent across multiple chunks' {
+			$Large = [PSCustomObject]@{ Payload = 'Z' * 20000 }
+			$Chunks = ConvertTo-Serial -Object $Large -ChunkSize 4096
+			@($Chunks).Count | Should -BeGreaterThan 1
+			$Lines = @($Chunks | ForEach-Object { ConvertTo-Serial -Object $_ -ChunkSize 0 })
+			$Job = Send-RDLinesInBackground -Lines $Lines
+
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+
+			$Result.Payload.Length | Should -Be 20000
+			$Result.Error          | Should -BeNullOrEmpty
+		}
+	}
+
+	Context 'Chunked transfer interrupted by unexpected data ("too short")' {
+		It 'Reports an error instead of returning partial data when a chunk sequence is broken' {
+			# Send only the first chunk, then something that is NOT a continuation chunk - the
+			# accumulation loop's own "else { throw }" guard (Receive-Data.ps1) should fire
+			# rather than silently returning whatever partial data had been assembled so far.
+			$Large = [PSCustomObject]@{ Payload = 'Q' * 20000 }
+			$Chunks = ConvertTo-Serial -Object $Large -ChunkSize 4096
+			@($Chunks).Count | Should -BeGreaterThan 1
+			$Lines = @(
+				(ConvertTo-Serial -Object $Chunks[0] -ChunkSize 0)
+				(ConvertTo-Serial -Object ([PSCustomObject]@{ NotAChunk = $true }) -ChunkSize 0)
+			)
+			$Job = Send-RDLinesInBackground -Lines $Lines
+
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+
+			$Result.Error | Should -Match 'Unexpected data received during chunked transfer'
+		}
+	}
+
+	Context 'Corrupted chunk checksum (damaged transfer)' {
+		It 'Reports a checksum-mismatch error rather than returning corrupted data' {
+			$Large = [PSCustomObject]@{ Payload = 'W' * 20000 }
+			$Chunks = ConvertTo-Serial -Object $Large -ChunkSize 4096
+			@($Chunks).Count | Should -BeGreaterThan 1
+			$Chunks[1].Data = 'CORRUPTED' + $Chunks[1].Data.Substring(9)
+			$Lines = @($Chunks | ForEach-Object { ConvertTo-Serial -Object $_ -ChunkSize 0 })
+			$Job = Send-RDLinesInBackground -Lines $Lines
+
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+
+			$Result.Error | Should -Match 'Checksum mismatch'
+		}
+	}
+
+	Context 'Failed deserialize (2026-09-10 null-guard fix)' {
+		It 'Reports an error instead of silently returning a null DataObject' {
+			# ConvertTo-Serial rejects $null outright (Mandatory parameter binding), so this
+			# replicates its own pipeline by hand on a genuine PSSerializer null - the one way
+			# ConvertFrom-Serial's -Text path returns $null WITHOUT throwing (a garbled/invalid
+			# line throws instead - e.g. bad Base64 - and was ALREADY caught by Receive-Data's
+			# pre-existing outer Catch before this fix). This is exactly the residual gap the
+			# 2026-09-10 fix closed: before it, $received -eq $null fell through to the
+			# non-chunked "else" and returned $DataObject = $null with no Error set at all.
+			$Xml = [Management.Automation.PSSerializer]::Serialize($null, 2)
+			$Xml = $Xml -replace '([\r]|[\n]|[\t])'
+			$Xml = $Xml -replace '>[ ]+<', '><'
+			$Json = $Xml | ConvertTo-Json -Compress
+			$Bytes = [Text.Encoding]::Unicode.GetBytes($Json)
+			$NullLine = [Convert]::ToBase64String($Bytes)
+			$Job = Send-RDLinesInBackground -Lines @($NullLine)
+
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+
+			$Result | Should -Not -BeNullOrEmpty
+			$Result.Error | Should -Match 'Failed to deserialize'
+		}
+	}
+
+	Context 'Sender never sends anything (2026-09-10: documents the missing read timeout)' {
+		It 'currently blocks with no bound instead of timing out' {
+			# Receive-Data's ReadLine calls (Receive-Data.ps1:52 and :112) have no timeout - see
+			# the discussion that led here. This test does NOT reuse the Describe-level shared
+			# pipe, and does NOT reuse $Script:RDReceiveDataCmd either (a FunctionInfo captured
+			# from the MAIN runspace's already-imported module) - found live building this test:
+			# invoking that FunctionInfo from a genuinely SEPARATE runspace does not carry the
+			# module's own script-scoped $Str* constants with it, so $PipeInfo.$StrReader
+			# resolved to $null there and Receive-Data crashed almost instantly on an unrelated
+			# "null key is not allowed in a hash literal" error - LOOKING like a fast, bounded
+			# completion when it had never actually reached the real blocking ReadLine() at all.
+			# The background scriptblock below imports the module itself, inside its OWN
+			# runspace, so its constants resolve correctly and this genuinely proves the gap.
+			$Private:Base = 'NP_RDNoDataTest_' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+			$Private:Srv = [System.IO.Pipes.NamedPipeServerStream]::new(
+				$Private:Base, [System.IO.Pipes.PipeDirection]::InOut, 1
+			)
+			$Private:ConnTask = $Private:Srv.WaitForConnectionAsync()
+			$Private:Cli = [System.IO.Pipes.NamedPipeClientStream]::new(
+				'.', $Private:Base, [System.IO.Pipes.PipeDirection]::InOut
+			)
+			$Private:Cli.Connect(2000)
+			$null = $Private:ConnTask.Wait(2000)
+
+			$Private:SrvReader = [System.IO.StreamReader]::new($Private:Srv)
+			$Private:SrvWriter = [System.IO.StreamWriter]::new($Private:Srv)
+			$Private:SrvWriter.AutoFlush = $true
+
+			$Private:RS = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+			$Private:RS.Open()
+			$Private:PS = [System.Management.Automation.PowerShell]::Create()
+			$Private:PS.Runspace = $Private:RS
+			[void]$Private:PS.AddScript({
+					Param($ModulePath, $Reader, $Writer)
+					Import-Module $ModulePath -Force -WarningAction SilentlyContinue
+					$Cmd = & (Get-Module NamedPipe) { Get-Command Receive-Data }
+					$PI = [PSCustomObject]@{ Reader = $Reader; Writer = $Writer; InfoDisplay = 0 }
+					& $Cmd -PipeInfo $PI
+				})
+			# (Get-Module NamedPipe).Path resolves to InitialiseModule.psm1, NOT the .psd1
+			# manifest - found live while building this test - so the manifest path is
+			# recomputed the same machine-agnostic way this file's own top-level BeforeAll does
+			# (from $PSScriptRoot, so it works regardless of where the repo root sits), rather
+			# than relying on that outer $ModulePath surviving into a nested It block's scope.
+			[void]$Private:PS.AddArgument((Join-Path (Split-Path -Parent $PSScriptRoot) 'NamedPipe.psd1'))
+			[void]$Private:PS.AddArgument($Private:SrvReader)
+			[void]$Private:PS.AddArgument($Private:SrvWriter)
+			$Private:Async = $Private:PS.BeginInvoke()
+
+			# Nothing is ever written to the client side - the sender simply never sends.
+			$Private:Completed = $Private:Async.AsyncWaitHandle.WaitOne(3000)
+
+			if ($Private:Completed)
+			{
+				# Receive-Data returned on its own within the bound - it now has SOME limit.
+				# Surface what it returned so a real fix gets verified here, not just assumed.
+				$Private:Result = $Private:PS.EndInvoke($Private:Async)
+				Write-Host ('Receive-Data completed unexpectedly with: {0}' -f ($Private:Result | Out-String))
+				$Private:PS.Streams.Error | ForEach-Object { Write-Host ('  runspace error: {0}' -f $_.Exception.Message) }
+				try { $Private:Srv.Dispose() } catch { $null = $_ }
+				try { $Private:Cli.Dispose() } catch { $null = $_ }
+				try { $Private:PS.Dispose() } catch { $null = $_ }
+				try { $Private:RS.Close(); $Private:RS.Dispose() } catch { $null = $_ }
+			}
+			else
+			{
+				# Deliberately DO NOT dispose anything here. Confirmed live: a genuinely stuck
+				# synchronous ReadLine() cannot be reliably unblocked from another thread by
+				# Stop()/Dispose() (the exact same limitation the Health Pipe Protocol tests'
+				# own comment documents for WaitForConnection() - a blocking Win32 call in
+				# flight on one thread does not respond to another thread closing the handle,
+				# and attempting it here previously hung this test's own cleanup indefinitely).
+				# Left to the test process's own exit to reclaim, same as that pattern's
+				# "poison pill" workaround exists precisely because there is no other reliable
+				# option - there is no reader loop here to feed a poison pill to.
+				Write-Host 'Leaving the stuck background runspace/pipe for process exit to reclaim (see comment).'
+			}
+
+			# By design (confirmed 2026-09-10): Receive-Data's FIRST read has no timeout, and a
+			# 3-second wait with nothing sent should still be blocked. This is NOT a gap - a slow
+			# server-side operation, or a server idling between requests, legitimately looks
+			# identical to this from Receive-Data's point of view, and must not be treated as a
+			# failure. If this assertion ever fails, Receive-Data's FIRST read was given a bound
+			# it should not have, and this test needs revisiting.
+			$Private:Completed | Should -Be $false
+		}
+	}
+
+	Context 'Sender stalls mid-chunk-sequence (2026-09-10: ChunkReadTimeout fix)' {
+		It 'Times out gracefully instead of hanging once a chunk transfer has already started' {
+			# Unlike the FIRST read (previous Context - deliberately unbounded), a read AWAITING
+			# THE NEXT CHUNK of an already-started transfer now has a bound (Receive-Data.ps1,
+			# the while loop after "Process first chunk") - once a sender has begun streaming, a
+			# gap before the next chunk means it broke mid-transfer, not that some slow operation
+			# is still in progress. This sends only the FIRST of several chunks, then genuinely
+			# stops (unlike the earlier "interrupted by unexpected data" Context above, which
+			# sends a well-formed-but-wrong line immediately - this one sends nothing at all and
+			# proves the new TIMEOUT fires, not the pre-existing "wrong data" guard).
+			$Large = [PSCustomObject]@{ Payload = 'Z' * 20000 }
+			$Chunks = ConvertTo-Serial -Object $Large -ChunkSize 4096
+			@($Chunks).Count | Should -BeGreaterThan 1
+			$FirstLine = ConvertTo-Serial -Object $Chunks[0] -ChunkSize 0
+			$Job = Send-RDLinesInBackground -Lines @($FirstLine)
+
+			# A short, test-scoped ChunkReadTimeout (500ms) so this runs fast rather than the
+			# real 30s default - PipeInfo carries this exactly the way production does (copied
+			# in from ServerClientParams by Start-PipeServerOrClient.ps1).
+			$Private:PIWithTimeout = [PSCustomObject]@{
+				Reader           = $Script:RDPipeInfo.Reader
+				Writer           = $Script:RDPipeInfo.Writer
+				InfoDisplay      = 0
+				ChunkReadTimeout = 500
+			}
+
+			$Private:Sw = [System.Diagnostics.Stopwatch]::StartNew()
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Private:PIWithTimeout
+			Wait-RDJob $Job
+
+			$Result.Error | Should -Match 'timed out'
+			$Result.Error | Should -Match 'next chunk'
+			# Proves this is the NEW bound firing (~500ms), not the unbounded first read never
+			# returning at all (which would fail this test's own timeout instead).
+			$Private:Sw.ElapsedMilliseconds | Should -BeLessThan 3000
 		}
 	}
 }
@@ -913,10 +1237,10 @@ Describe 'Depth Parameter Tests' -Tag 'Depth' {
 	}
 }
 
-Describe 'Set-ObjectParams Parameter Flow' -Tag 'ParamFlow' {
+Describe 'Set-ObjectParameterSet Parameter Flow' -Tag 'ParamFlow' {
 	Context 'MyOptions Defaults' {
 		BeforeAll {
-			$Script:Options = Set-ObjectParams -Dataset $StrMyOptions
+			$Script:Options = Set-ObjectParameterSet -Dataset $StrMyOptions
 		}
 
 		It 'InfoDisplay should default to 0 (int)' {
@@ -939,63 +1263,74 @@ Describe 'Set-ObjectParams Parameter Flow' -Tag 'ParamFlow' {
 		It 'ClientConnectTimeout should default to 10000' {
 			$Script:Options.$StrClientConnectTimeout | Should -Be 10000
 		}
+
+		It 'ChunkReadTimeout should default to 30000' {
+			$Script:Options.$StrChunkReadTimeout | Should -Be 30000
+		}
 	}
 
 	Context 'MyOptions With Parameters' {
 		It 'Should pass InfoDisplay as int value' {
 			$Params = @{ $StrInfoDisplay = 2 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
 			$Options.$StrInfoDisplay | Should -Be 2
 			$Options.$StrInfoDisplay | Should -BeOfType [int]
 		}
 
 		It 'Should pass Depth value' {
 			$Params = @{ $StrDepth = 5 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
 			$Options.$StrDepth | Should -Be 5
 		}
 
 		It 'Should pass ChunkSize value' {
 			$Params = @{ $StrChunkSize = 16384 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
 			$Options.$StrChunkSize | Should -Be 16384
 		}
 
 		It 'Should pass ServerWaitTimeout value' {
 			$Params = @{ $StrServerWaitTimeout = 120 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
 			$Options.$StrServerWaitTimeout | Should -Be 120
 		}
 
 		It 'Should pass ClientConnectTimeout value' {
 			$Params = @{ $StrClientConnectTimeout = 5000 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
 			$Options.$StrClientConnectTimeout | Should -Be 5000
+		}
+
+		It 'Should pass ChunkReadTimeout value' {
+			$Params = @{ $StrChunkReadTimeout = 2000 }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$Options.$StrChunkReadTimeout | Should -Be 2000
 		}
 	}
 
 	Context 'ServerClientParams Inherits From MyOptions' {
 		It 'Server params should inherit InfoDisplay from MyOptions' {
 			$Params = @{ $StrInfoDisplay = 1 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
-			$SCP = Set-ObjectParams -Server -Dataset $StrServerClientParams -MyParameters $Options
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$SCP = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
 			$SCP.$StrInfoDisplay | Should -Be 1
 			$SCP.$StrInfoDisplay | Should -BeOfType [int]
 		}
 
 		It 'Server params should inherit Depth from MyOptions' {
 			$Params = @{ $StrDepth = 7 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
-			$SCP = Set-ObjectParams -Server -Dataset $StrServerClientParams -MyParameters $Options
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$SCP = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
 			$SCP.$StrDepth | Should -Be 7
 		}
 
 		It 'Server params should inherit timeouts from MyOptions' {
-			$Params = @{ $StrServerWaitTimeout = 90; $StrClientConnectTimeout = 20000 }
-			$Options = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Params
-			$SCP = Set-ObjectParams -Server -Dataset $StrServerClientParams -MyParameters $Options
+			$Params = @{ $StrServerWaitTimeout = 90; $StrClientConnectTimeout = 20000; $StrChunkReadTimeout = 5000 }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$SCP = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
 			$SCP.$StrServerWaitTimeout | Should -Be 90
 			$SCP.$StrClientConnectTimeout | Should -Be 20000
+			$SCP.$StrChunkReadTimeout | Should -Be 5000
 		}
 	}
 }
@@ -1040,9 +1375,9 @@ Describe 'FunctionExportTable' -Tag 'ExportTable' {
 			$Module.ExportedFunctions.Keys | Should -Not -Contain 'Set-PipeSecurity'
 		}
 
-		It 'Test-UserOrGroupExists should not be exported' {
+		It 'Test-AccessIdentifier should not be exported' {
 			$Module = Get-Module -Name NamedPipe
-			$Module.ExportedFunctions.Keys | Should -Not -Contain 'Test-UserOrGroupExists'
+			$Module.ExportedFunctions.Keys | Should -Not -Contain 'Test-AccessIdentifier'
 		}
 
 		It 'Get-SBResult should not be exported' {
@@ -1053,6 +1388,11 @@ Describe 'FunctionExportTable' -Tag 'ExportTable' {
 		It 'Set-MyWindowState should not be exported (vendored internal)' {
 			$Module = Get-Module -Name NamedPipe
 			$Module.ExportedFunctions.Keys | Should -Not -Contain 'Set-MyWindowState'
+		}
+
+		It 'Write-MyCatchAudit should not be exported (vendored internal, catch-audit set)' {
+			$Module = Get-Module -Name NamedPipe
+			$Module.ExportedFunctions.Keys | Should -Not -Contain 'Write-MyCatchAudit'
 		}
 	}
 
@@ -1077,9 +1417,9 @@ Describe 'FunctionExportTable' -Tag 'ExportTable' {
 			$Module.ExportedFunctions.Keys | Should -Contain 'Send-Request'
 		}
 
-		It 'Set-ObjectParams should be exported' {
+		It 'Set-ObjectParameterSet should be exported' {
 			$Module = Get-Module -Name NamedPipe
-			$Module.ExportedFunctions.Keys | Should -Contain 'Set-ObjectParams'
+			$Module.ExportedFunctions.Keys | Should -Contain 'Set-ObjectParameterSet'
 		}
 	}
 }
@@ -1175,9 +1515,9 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
 		$Default.Name | Should -Be 'NamedPipe'
 	}
 
-	It 'Should have Version set to 0.13' {
+	It 'Should have Version set to 0.14' {
 		$Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-		$Default.Version | Should -Be '0.13'
+		$Default.Version | Should -Be '0.14'
 	}
 }
 
@@ -1416,5 +1756,121 @@ Describe 'Health Pipe Protocol' -Tag 'HealthPipe' {
 			}
 			Test-PipeSession -PipeInfo $WrongInfo -TimeoutMs 500 | Should -Be $false
 		}
+	}
+}
+
+Describe 'Write-HealthPipeCatchRecord' {
+	# Cross-runspace-safe catch-audit path for the isolated health-pipe listener (2026-09-11) - a
+	# hand-written, disk-only analog of Write-MyCatchAudit, since that function cannot run inside the
+	# bare runspace the health-pipe loop uses. Not in FunctionsToExport (matches Write-MyCatchAudit's
+	# own vendored/internal-only convention), so called via InModuleScope - same pattern as
+	# CommonScripts.Tests.ps1's own 'Write-MyCatchAudit' Describe block. The embedded runspace
+	# scriptblock that dot-sources and calls this function at runtime is not independently
+	# unit-testable without reimplementing it, same limitation the 'Health Pipe Protocol' Describe
+	# above already has for the real pipe-protocol loop; that wiring is verified live/manually instead.
+
+	BeforeAll {
+		$Script:_TestPersistPath = Join-Path $env:TEMP ('HealthPipeCatchTest-' + [Guid]::NewGuid().ToString('N') + '.jsonl')
+
+		InModuleScope 'NamedPipe' {
+			Function Script:New-HealthPipeTestError
+			{
+				Try { throw 'health pipe boom' } Catch { return $_ }
+			}
+
+			# 2026-09-11, found live: an error raised inside an ANONYMOUS scriptblock (no backing .ps1
+			# file - exactly the health-pipe listener's own AddScript block shape) has ScriptName = ''
+			# (empty string, not $null). Split-Path -Path '' throws a ParameterBindingValidationException
+			# that -ErrorAction SilentlyContinue does NOT suppress - this reproduces that exact condition
+			# without needing a real separate runspace.
+			Function Script:New-HealthPipeTestErrorEmptyScriptName
+			{
+				Try { & ([scriptblock]::Create('throw "health pipe boom (anonymous scriptblock)"')) }
+				Catch { return $_ }
+			}
+		}
+	}
+
+	BeforeEach {
+		If (Test-Path -LiteralPath $Script:_TestPersistPath) { Remove-Item -LiteralPath $Script:_TestPersistPath -Force }
+		$Script:_savedVerbose = $env:MyCatchAuditVerbose
+		$env:MyCatchAuditVerbose = $null
+	}
+
+	AfterEach { $env:MyCatchAuditVerbose = $Script:_savedVerbose }
+
+	AfterAll {
+		If (Test-Path -LiteralPath $Script:_TestPersistPath) { Remove-Item -LiteralPath $Script:_TestPersistPath -Force -ErrorAction SilentlyContinue }
+	}
+
+	It 'Writes a JSONL line with Origin=HealthPipeListener and IsTeardown=$false for a plain call' {
+		InModuleScope 'NamedPipe' -Parameters @{ Path = $Script:_TestPersistPath } {
+			Param ($Path)
+			$Err = New-HealthPipeTestError
+			Write-HealthPipeCatchRecord -PersistPath $Path -Source 'test: plain' -ErrorRecord $Err
+		}
+
+		$Lines = @(Get-Content -LiteralPath $Script:_TestPersistPath)
+		$Lines.Count | Should -Be 1
+		$Record = $Lines[0] | ConvertFrom-Json
+		$Record.Origin | Should -Be 'HealthPipeListener'
+		$Record.IsTeardown | Should -BeFalse
+		$Record.Source | Should -Be 'test: plain'
+	}
+
+	It 'Writes IsTeardown=$true when -Teardown is passed' {
+		InModuleScope 'NamedPipe' -Parameters @{ Path = $Script:_TestPersistPath } {
+			Param ($Path)
+			$Err = New-HealthPipeTestError
+			Write-HealthPipeCatchRecord -PersistPath $Path -Source 'test: teardown' -ErrorRecord $Err -Teardown
+		}
+
+		$Record = @(Get-Content -LiteralPath $Script:_TestPersistPath)[0] | ConvertFrom-Json
+		$Record.IsTeardown | Should -BeTrue
+	}
+
+	It 'Live-echoes to Warning when verbose is on and -Teardown is NOT passed' {
+		$env:MyCatchAuditVerbose = '1'
+		$Warnings = @(InModuleScope 'NamedPipe' -Parameters @{ Path = $Script:_TestPersistPath } {
+				Param ($Path)
+				$Err = New-HealthPipeTestError
+				Write-HealthPipeCatchRecord -PersistPath $Path -Source 'test: plain, verbose' -ErrorRecord $Err 3>&1
+			})
+		$Warnings.Count | Should -BeGreaterThan 0
+	}
+
+	It 'Does NOT live-echo, even with verbose on, when -Teardown IS passed' {
+		$env:MyCatchAuditVerbose = '1'
+		$Warnings = @(InModuleScope 'NamedPipe' -Parameters @{ Path = $Script:_TestPersistPath } {
+				Param ($Path)
+				$Err = New-HealthPipeTestError
+				Write-HealthPipeCatchRecord -PersistPath $Path -Source 'test: teardown, verbose' -ErrorRecord $Err -Teardown 3>&1
+			})
+		$Warnings.Count | Should -Be 0
+	}
+
+	It 'Persists successfully even when the error has an empty ScriptName (anonymous scriptblock, no backing file)' {
+		InModuleScope 'NamedPipe' -Parameters @{ Path = $Script:_TestPersistPath } {
+			Param ($Path)
+			$Err = New-HealthPipeTestErrorEmptyScriptName
+			Write-HealthPipeCatchRecord -PersistPath $Path -Source 'test: empty ScriptName' -ErrorRecord $Err
+		}
+
+		$Lines = @(Get-Content -LiteralPath $Script:_TestPersistPath)
+		$Lines.Count | Should -Be 1
+		$Record = $Lines[0] | ConvertFrom-Json
+		$Record.Source | Should -Be 'test: empty ScriptName'
+		$Record.ScriptName | Should -BeNullOrEmpty
+	}
+
+	It 'Never throws, even when the persist path is unwritable' {
+		$BadPath = Join-Path (Join-Path $env:TEMP ('NoSuchDir-' + [Guid]::NewGuid().ToString('N'))) 'log.jsonl'
+		{
+			InModuleScope 'NamedPipe' -Parameters @{ Path = $BadPath } {
+				Param ($Path)
+				$Err = New-HealthPipeTestError
+				Write-HealthPipeCatchRecord -PersistPath $Path -Source 'test: unwritable path' -ErrorRecord $Err
+			}
+		} | Should -Not -Throw
 	}
 }

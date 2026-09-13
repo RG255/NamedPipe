@@ -17,25 +17,25 @@ Import-Module $modulePath -ErrorAction Stop -Force
 
 Describe "NamedPipe v0.9 Security Tests" {
 
-	Context "ConvertTo-Parameters Escaping" {
+	Context "ConvertTo-ParameterSet Escaping" {
 
 		It "Should handle simple paths" {
 			$params = @{ Path = "C:\Temp" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Not -BeNullOrEmpty
 			$result | Should -Match "Path"
 		}
 
 		It "Should escape single quotes" {
 			$params = @{ Value = "test'value" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			# Result should contain escaped quotes
 			$result | Should -Match "test"
 		}
 
 		It "Should handle injection attempt patterns" {
 			$params = @{ Path = "C:\'; Remove-Item #" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			# Should not execute code, just convert to string
 			$result | Should -Not -BeNullOrEmpty
 			$result | Should -Match "Path"
@@ -43,19 +43,19 @@ Describe "NamedPipe v0.9 Security Tests" {
 
 		It "Should preserve non-string values" {
 			$params = @{ Count = 42 }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Match "42"
 		}
 
 		It "Should handle empty values" {
 			$params = @{ Value = "" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Not -BeNullOrEmpty
 		}
 
 		It "Should not corrupt complex paths" {
 			$params = @{ Path = "C:\Windows\System32\Drivers\etc\hosts" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Not -BeNullOrEmpty
 		}
 	}
@@ -74,16 +74,16 @@ Describe "NamedPipe v0.9 Security Tests" {
 	# and an OutOfMemoryException within seconds. Fixed with the unary comma:
 	# `Switch -Regex (,$Private:y[$Private:x])`, forcing single-item evaluation regardless of type.
 	# See memory project_namedpipe_oom_error_cascade_2026_08_29 for the full incident writeup.
-	Context "ConvertTo-Parameters Array Handling" {
+	Context "ConvertTo-ParameterSet Array Handling" {
 
 		It "Should handle an array-valued parameter without throwing" {
 			$params = @{ ConfigContent = @('line1', 'line2', 'line3') }
-			{ ConvertTo-Parameters -Hash $params } | Should -Not -Throw
+			{ ConvertTo-ParameterSet -Hash $params } | Should -Not -Throw
 		}
 
 		It "Should escape and comma-join array elements exactly once, not exponentially" {
 			$params = @{ ConfigContent = @("it's", 'plain', "another 'quoted' one") }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			# A single correct pass produces one '' per literal quote in the source (2 quotes in
 			# "it's" + "another 'quoted' one" = 3 literal quotes -> 3 escaped '' pairs = 6 quote
 			# characters from escaping, plus the wrapping quotes around each of the 3 elements).
@@ -105,7 +105,7 @@ Describe "NamedPipe v0.9 Security Tests" {
 			$Lines = 1..113 | ForEach-Object { "Field{0} = 'value{0}'" -f $_ }
 			$params = @{ ConfigContent = $Lines }
 			$sw = [System.Diagnostics.Stopwatch]::StartNew()
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$sw.Stop()
 			$result | Should -Not -BeNullOrEmpty
 			# A correct single pass over 113 short lines is a few milliseconds; the exponential-
@@ -116,7 +116,7 @@ Describe "NamedPipe v0.9 Security Tests" {
 
 		It "Should preserve every array element's content in the output" {
 			$params = @{ ConfigContent = @('alpha', 'beta', 'gamma') }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Match 'alpha'
 			$result | Should -Match 'beta'
 			$result | Should -Match 'gamma'
@@ -200,43 +200,43 @@ Describe "NamedPipe v0.9 Security Tests" {
 
 		It "Parameter with semicolon should not execute code" {
 			$params = @{ Value = "test; Get-Process" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			# This should just be a string, not execute anything
 			$result | Should -Not -BeNullOrEmpty
 		}
 
 		It "Parameter with backtick should not escape quotes" {
 			$params = @{ Value = "test`'value" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Not -BeNullOrEmpty
 		}
 
 		It "Parameter with variable-like syntax should not expand" {
 			$params = @{ Value = "`$env:SYSTEMROOT" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			# Should not expand to actual system root
 			$result | Should -Not -Match "C:\\Windows"
 		}
 
 		It "Multiple quote escaping works" {
 			$params = @{ Text = "It's a 'quoted' string" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Not -BeNullOrEmpty
 		}
 	}
 
 	Context "Module Structure" {
 
-		It "ConvertTo-Parameters function should exist" {
-			Get-Command ConvertTo-Parameters -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+		It "ConvertTo-ParameterSet function should exist" {
+			Get-Command ConvertTo-ParameterSet -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
 		}
 
-		It "ConvertTo-Parameters should accept hashtable input" {
-			{ ConvertTo-Parameters -Hash @{ Test = "value" } } | Should -Not -Throw
+		It "ConvertTo-ParameterSet should accept hashtable input" {
+			{ ConvertTo-ParameterSet -Hash @{ Test = "value" } } | Should -Not -Throw
 		}
 
-		It "ConvertTo-Parameters should accept pipeline input" {
-			{ @{ Test = "value" } | ConvertTo-Parameters } | Should -Not -Throw
+		It "ConvertTo-ParameterSet should accept pipeline input" {
+			{ @{ Test = "value" } | ConvertTo-ParameterSet } | Should -Not -Throw
 		}
 
 		It "Send-Request should be available" {
@@ -248,19 +248,19 @@ Describe "NamedPipe v0.9 Security Tests" {
 
 		It "Simple parameter conversion still works" {
 			$params = @{ Name = "test" }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Not -BeNullOrEmpty
 		}
 
 		It "Multiple parameters work together" {
 			$params = @{ Path = "C:\Temp"; Recurse = $true; Force = $false }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Not -BeNullOrEmpty
 		}
 
 		It "Numeric parameters preserved" {
 			$params = @{ Count = 100; Timeout = 5 }
-			$result = ConvertTo-Parameters -Hash $params
+			$result = ConvertTo-ParameterSet -Hash $params
 			$result | Should -Match "100"
 		}
 

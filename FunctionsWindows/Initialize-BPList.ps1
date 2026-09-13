@@ -32,23 +32,23 @@
 	{
 		If ($Script:FTrace)
 		{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
-		
-		$BPObject=Set-ObjectParams -Dataset breakpoint
-		
+
+		$BPObject=Set-ObjectParameterSet -Dataset breakpoint
+
 		If ($BPObject.BPInfo.count -eq [int]0)
 		{$Private:FunctionBPinfo = @{}
 			# Add calling script
-			$Private:Functioninfo = Set-ObjectParams -Dataset breakpoint
+			$Private:Functioninfo = Set-ObjectParameterSet -Dataset breakpoint
 			$Private:Functioninfo.Fullname = ((Get-PSCallStack)[-1].Scriptname)
 			$Private:Functioninfo.Name = [System.IO.Path]::GetFileNameWithoutExtension($Private:Functioninfo.Fullname)
 			$Private:FunctionBPinfo.add($Private:Functioninfo.Name,$Private:Functioninfo)
 		}
 		Else
 		{$Private:FunctionBPinfo = $BPObject.BPInfo}
-		
+
 		#if (-not $Private:FunctionBPinfo[$BPObject.name].Name)
 		#{$Private:FunctionBPinfo.add($BPObject.name,$BPObject)}
-						
+
 		if ($AddModules)
 		{
 			foreach ($Private:Mod in (Get-Module | Where-Object { $_.ModuleBase }))
@@ -57,7 +57,7 @@
 				{
 					if (-not $Private:FunctionBPinfo[$Private:Item.basename].name)
 					{
-						$Private:Functioninfo = Set-ObjectParams -Dataset breakpoint
+						$Private:Functioninfo = Set-ObjectParameterSet -Dataset breakpoint
 						$Private:Functioninfo.Fullname = $Private:Item.Fullname
 						$Private:Functioninfo.Name = [System.IO.Path]::GetFileNameWithoutExtension($Private:Functioninfo.Fullname)
 						$Private:FunctionBPinfo.add($Private:Functioninfo.Name,$Private:Functioninfo)
@@ -67,6 +67,6 @@
 		}
 	}
 	catch
-	{$Private:FunctionBPinfo.Add('Error',(Get-MyErrors -Return))}
+	{$Private:FunctionBPinfo.Add('Error',(Get-MyError -Return))}
 	$Private:FunctionBPinfo
 }

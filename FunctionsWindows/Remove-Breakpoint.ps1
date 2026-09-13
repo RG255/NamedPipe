@@ -1,8 +1,8 @@
-﻿Function Remove-Breakpoints
+﻿Function Remove-Breakpoint
 {
 	<#
 		.SYNOPSIS
-		Removes PowerShell breakpoints set by Set-Breakpoints.
+		Removes PowerShell breakpoints set by Set-Breakpoint.
 
 		.DESCRIPTION
 		Removes breakpoints either from a specific breakpoint list (BPObject)
@@ -17,11 +17,11 @@
 		regardless of how they were created.
 
 		.EXAMPLE
-		Remove-Breakpoints -BPObject $BPList
+		Remove-Breakpoint -BPObject $BPList
 		Removes only the breakpoints tracked in the breakpoint list.
 
 		.EXAMPLE
-		Remove-Breakpoints -All
+		Remove-Breakpoint -All
 		Removes all breakpoints in the session.
 
 		.OUTPUTS
@@ -38,7 +38,7 @@
 	)
 	If ($Script:FTrace)
 	{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
-	
+
 	If ($All)
 	{
 		foreach ($Private:ID in (Get-PSBreakpoint).Id)

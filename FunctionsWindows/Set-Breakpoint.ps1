@@ -1,4 +1,4 @@
-﻿Function Set-Breakpoints
+﻿Function Set-Breakpoint
 {
 	<#
 		.SYNOPSIS
@@ -14,7 +14,7 @@
 		line/command breakpoint definitions populated.
 
 		.EXAMPLE
-		$BPList = Set-Breakpoints -BPObject $BPList
+		$BPList = Set-Breakpoint -BPObject $BPList
 		Sets all defined breakpoints and returns the updated list with IDs.
 
 		.OUTPUTS
@@ -28,7 +28,7 @@
 	)
 	If ($Script:FTrace)
 	{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
-	
+
 	foreach ($Private:Function in $BPObject.keys)
 	{
 		If ($BPObject.$Private:Function.Lines.count -ne [int]0)

@@ -27,9 +27,9 @@ NamedPipe v0.9 fixes **critical code injection vulnerabilities** discovered in v
 
 ### Files Modified
 
-- `Functions/ConvertTo-Parameters.ps1` - Core injection fix
+- `Functions/ConvertTo-ParameterSet.ps1` - Core injection fix
 - `Functions/Get-SBResult.ps1` - Syntax validation added
-- `FunctionsWindows/Test-UserOrGroupExists.ps1` - Validation improved
+- `FunctionsWindows/Test-AccessIdentifier.ps1` - Validation improved
 - `NamedPipe.psd1` - Version bumped to 0.9
 
 ### New Documentation

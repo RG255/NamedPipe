@@ -9,13 +9,13 @@
       2. A CLEAN session with InfoDisplay bit 8 KEEPS a per-session log naming the pipe, with milestones.
       3. (unit-level failure/redaction rules are covered by C:\Temp\test-serverlog.ps1.)
 
-    Non-elevated (AdminRequired not set) - no UAC. Requires NamedPipe 0.13 DEPLOYED.
+    Non-elevated (AdminRequired not set) - no UAC. Requires NamedPipe 0.14 DEPLOYED.
 #>
 [CmdletBinding()]
 Param ()
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.13 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.14 -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case { param([string]$Label, [bool]$Cond)
@@ -26,7 +26,7 @@ $LogDir = Join-Path $env:APPDATA 'NamedPipe-Logs'
 
 function Invoke-LoggedSession {
 	param([int]$InfoDisplay)
-	$Private:MO = Set-ObjectParams -Dataset $StrMyOptions -MyParameters @{}
+	$Private:MO = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{}
 	$Private:MO.$StrInfoDisplay = $InfoDisplay
 	$Private:MO.$StrWindowStyle = $StrHidden
 	$Private:Session = Start-PipeSession -MyParameters $Private:MO

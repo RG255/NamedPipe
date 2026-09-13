@@ -1,4 +1,4 @@
-﻿Function Test-UserOrGroupExists
+﻿Function Test-AccessIdentifier
 {
 	<#
 		.SYNOPSIS
@@ -15,7 +15,7 @@
 		- 1 part:  'Username' becomes 'Username:Allow:ReadWrite'
 		- 2 parts: 'Username:Allow' becomes 'Username:Allow:ReadWrite'
 
-		Used internally by Set-ObjectParams to validate AccessIdentifier entries
+		Used internally by Set-ObjectParameterSet to validate AccessIdentifier entries
 		before they are passed to Set-PipeSecurity.
 
 		.PARAMETER IDList
@@ -23,11 +23,11 @@
 		Format: 'Identity:AllowOrDeny:AccessRight'
 
 		.EXAMPLE
-		'Ray:Allow:ReadWrite' | Test-UserOrGroupExists
+		'Ray:Allow:ReadWrite' | Test-AccessIdentifier
 		Validates and returns the access identifier if the user 'Ray' exists.
 
 		.EXAMPLE
-		@('DOMAIN\User:Allow:ReadWrite', 'Administrators:Allow:ReadWrite') | Test-UserOrGroupExists
+		@('DOMAIN\User:Allow:ReadWrite', 'Administrators:Allow:ReadWrite') | Test-AccessIdentifier
 		Validates multiple access identifiers via pipeline.
 
 		.INPUTS

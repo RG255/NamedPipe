@@ -38,10 +38,10 @@
 #
 #$MyVars = [Ordered]@{
 #}
-#Publish-Variables -Variables $MyVars
+#Publish-Variable -Variables $MyVars
 #$MyVars = @{
 #}
-#Publish-Variables -Variables $MyVars
+#Publish-Variable -Variables $MyVars
 $MyVars = [Ordered]@{
 	N03OtherVars = @{
 		StrForceMinimize   = @{
@@ -162,7 +162,7 @@ $MyVars = [Ordered]@{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 $MyVars = @{
 	N09Finalise = @{
 		DefineVariablesSetWindow = @{
@@ -173,5 +173,5 @@ $MyVars = @{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 

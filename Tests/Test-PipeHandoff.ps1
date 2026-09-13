@@ -12,7 +12,7 @@
 [CmdletBinding()]
 Param ()
 Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module NamedPipe -RequiredVersion 0.13 -Force -ErrorAction Stop
+Import-Module NamedPipe -RequiredVersion 0.14 -Force -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case { param([string]$L, [bool]$C) if ($C) { Write-Host "[PASS] $L" -ForegroundColor Green } else { Write-Host "[FAIL] $L" -ForegroundColor Red; $Script:Pass = $false } }
@@ -21,7 +21,7 @@ $ClientScript = Join-Path $PSScriptRoot 'Test-PipeHandoff-Client.ps1'
 function Invoke-HandoffCase {
 	param([string]$Label, [bool]$ArmWrong, [bool]$ExpectAdmit)
 
-	$mo = Set-ObjectParams -Dataset $StrMyOptions -MyParameters @{}
+	$mo = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{}
 	$mo.$StrWindowStyle = $StrHidden
 	$Session = Start-PipeSession -MyParameters $mo          # the "GUI" - connected, holds the nonce
 	$scp = $Session.$StrServerClientParams

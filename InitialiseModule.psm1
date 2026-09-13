@@ -34,9 +34,9 @@
 		to use while it is running.
 
 		Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-		Import-Module NamedPipe -RequiredVersion 0.13
+		Import-Module NamedPipe -RequiredVersion 0.14
 
-		Where -RequiredVersion 0.13 is the version of the module to use, there can be multiple
+		Where -RequiredVersion 0.14 is the version of the module to use, there can be multiple
 		versions of the same module as its functionality is improved or expanded.
 #> 
 try
@@ -79,7 +79,7 @@ try
 		} # End of Custom XML processing
 	}
 	
-	Function Initialize-Folders
+	Function Initialize-Folder
 	{
 		[CmdletBinding()]
 		Param (
@@ -94,7 +94,7 @@ try
 			{New-Item -Path $Path -ItemType Directory}
 		}
 	}
-	Function Publish-Variables
+	Function Publish-Variable
 	{
 		<#
 				.SYNOPSIS
@@ -104,11 +104,11 @@ try
 				As Above
         
 				.EXAMPLE
-				Publish-Variables is called from the file Define-Variables.ps1 which is executed as part
+				Publish-Variable is called from the file Define-Variables.ps1 which is executed as part
 				of this psm1 file when the module is initialised.
         
 				.EXAMPLE
-				Publish-Variables
+				Publish-Variable
 		#>
 		Param ([hashtable]$Variables)
 		Try
@@ -236,9 +236,9 @@ try
 				such -Option can be omitted on the command line.
 
 				.EXAMPLE
-				Publish-Variables
+				Publish-Variable
 				or 
-				Publish-Variables -Option [Windows|Linux|MacOS]
+				Publish-Variable -Option [Windows|Linux|MacOS]
 		#>
 		[CmdletBinding()]
 		Param (
@@ -255,7 +255,7 @@ try
 			}
 		}
 	}
-	Function Invoke-InitFunctions
+	Function Invoke-InitFunction
 	{
 		<#
 				.SYNOPSIS
@@ -269,8 +269,8 @@ try
 				The OS option (Windows, Linux, MacOS) or empty string for common functions.
 
 				.EXAMPLE
-				Invoke-InitFunctions
-				Invoke-InitFunctions -Option 'Windows'
+				Invoke-InitFunction
+				Invoke-InitFunction -Option 'Windows'
 		#>
 		[CmdletBinding()]
 		Param (
@@ -288,7 +288,7 @@ try
 					# The only handler used to be a Set-Window -Characters warm-up, removed with Set-Window in
 					# 0.12 (NamedPipe now only hides/restores via Set-MyWindowState). If a future init function
 					# needs invoking at load, add its handling in this block.
-					Write-Verbose -Message ('Invoke-InitFunctions: no handler for [{0}] - skipped.' -f $InitFunc.Function)
+					Write-Verbose -Message ('Invoke-InitFunction: no handler for [{0}] - skipped.' -f $InitFunc.Function)
 				}
 			}
 		}
@@ -315,7 +315,7 @@ catch
 try
 {
 	# Create any Missing folders
-	Initialize-Folders -Folders 'Functions', 'FunctionsLinux', 'FunctionsWindows', 'FunctionsMacOS'
+	Initialize-Folder -Folders 'Functions', 'FunctionsLinux', 'FunctionsWindows', 'FunctionsMacOS'
 	# Define common variables and custom XML
 	Publish-MyEnvironment
 	# Check if we should export all functions (for testing)
@@ -327,8 +327,11 @@ try
 	$Exclude = @('Define-CustomXML|DefineVariables|{0}$' -f $StrExtZip)
 	# Process all common functions
 	$MyPath = (Join-Path -Path $ModuleScriptRoot -ChildPath ('Functions\*{0}' -f $StrExtPS1) -ErrorAction Stop)
+	# Vendored CommonScripts copies (see Shared-Usage.psd1) sit in their own 'vendored' subfolder
+	# (changed 2026-09-13) for filesystem visibility - unioned in here.
+	$MyVendoredPath = (Join-Path -Path $ModuleScriptRoot -ChildPath ('Functions\vendored\*{0}' -f $StrExtPS1))
 	# Get a list of *.ps1 files that should contain a function of the same name
-	$MyFunctions = (Get-ChildItem -Path $MyPath -ErrorAction stop | Where-Object {$_.Name -inotmatch $Exclude -and $_.Name -notin $VarDefFiles} )
+	$MyFunctions = (@(Get-ChildItem -Path $MyPath -ErrorAction stop) + @(Get-ChildItem -Path $MyVendoredPath -ErrorAction SilentlyContinue) | Where-Object {$_.Name -inotmatch $Exclude -and $_.Name -notin $VarDefFiles} )
 	# Define and execute common functions  
 	ForEach ($Item in $MyFunctions)
 	{
@@ -370,7 +373,9 @@ try
 			$Exclude = @('Define-CustomXML|{0}$' -f $StrExtZip)
 			# Process all Windows specific functions
 			$MyPath = (Join-Path -Path $ModuleScriptRoot -ChildPath ('FunctionsWindows\*{0}' -f $StrExtPS1) -ErrorAction Stop)
-			$MyFunctions = (Get-ChildItem -Path $MyPath -ErrorAction stop | Where-Object {$_.Name -inotmatch $Exclude -and $_.Name -notin $VarDefFiles} )
+			# Vendored CommonScripts copies sit in their own 'vendored' subfolder (changed 2026-09-13).
+			$MyVendoredPath = (Join-Path -Path $ModuleScriptRoot -ChildPath ('FunctionsWindows\vendored\*{0}' -f $StrExtPS1))
+			$MyFunctions = (@(Get-ChildItem -Path $MyPath -ErrorAction stop) + @(Get-ChildItem -Path $MyVendoredPath -ErrorAction SilentlyContinue) | Where-Object {$_.Name -inotmatch $Exclude -and $_.Name -notin $VarDefFiles} )
 			ForEach ($Item in $MyFunctions)
 			{
 				$Base = $Item.Basename
@@ -402,7 +407,7 @@ try
 				}
 			}
 			# Call initialization functions defined in PSD1
-			Invoke-InitFunctions -Option 'Windows'
+			Invoke-InitFunction -Option 'Windows'
 		}
 		4
 		{
@@ -505,3 +510,8 @@ Catch
 	($Global:Error[$ErrorNumber].InvocationInfo.Line).Trim() | Write-Warning
 	throw 'Unable to initialise module: {0}' -f $ModuleName
 }
+
+# Catch-audit: surface any PERSISTED entries from a previous session/crash, once per process across
+# every vendoring module (see Show-MyCatchAuditPendingNotice's own doc, 2026-09-10). Wrapped so a
+# failure here can never turn into a module-import failure.
+Try { Show-MyCatchAuditPendingNotice } Catch { Write-MyCatchAudit -Source 'InitialiseModule.psm1 (NamedPipe): module-init pending-catch-audit notice' -ErrorRecord $_ }

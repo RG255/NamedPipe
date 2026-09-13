@@ -21,7 +21,7 @@ NamedPipe v0.9 is a **security-focused release** that fixes 7 security vulnerabi
 1. **Code Injection in Parameter Handling**
    - Attackers could execute arbitrary code through hashtable parameters
    - Fix: Proper string escaping with quote safety
-   - File: `Functions/ConvertTo-Parameters.ps1`
+   - File: `Functions/ConvertTo-ParameterSet.ps1`
 
 2. **Syntax Validation Before Execution**  
    - Detection of malformed commands before running
@@ -32,7 +32,7 @@ NamedPipe v0.9 is a **security-focused release** that fixes 7 security vulnerabi
 
 3. **Access Identifier Validation Hardened**
    - Stricter validation of ACL identity strings
-   - File: `FunctionsWindows/Test-UserOrGroupExists.ps1`
+   - File: `FunctionsWindows/Test-AccessIdentifier.ps1`
 
 4. **Information Disclosure - Stack Traces**
    - Redacted file paths from error logs
@@ -59,9 +59,9 @@ NamedPipe v0.9 is a **security-focused release** that fixes 7 security vulnerabi
 ## Files Modified
 
 ### Core Security Fixes
-- `Functions/ConvertTo-Parameters.ps1` - Parameter escaping
+- `Functions/ConvertTo-ParameterSet.ps1` - Parameter escaping
 - `Functions/Get-SBResult.ps1` - Syntax validation
-- `FunctionsWindows/Test-UserOrGroupExists.ps1` - ACL validation
+- `FunctionsWindows/Test-AccessIdentifier.ps1` - ACL validation
 - `FunctionsWindows/Exit-Pipe.ps1` - Error detection
 - `FunctionsWindows/Send-Request.ps1` - Client validation
 - `FunctionsWindows/Start-PipeServerOrClient.ps1` - Logging & health pipe

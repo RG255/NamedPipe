@@ -113,7 +113,7 @@
 				$Private:EvLog.WriteEntry($Private:EvMsg, $Private:EvType, $Private:EvId)
 				$Private:EvLog.Dispose()
 			}
-			catch { $null = $_ }
+			catch { Write-MyCatchAudit -Source 'Save-ServerLog: drop a Windows Event Log pointer to the crash-log file - degrades silently to file-only when the event source is unregistered or permission is denied' -ErrorRecord $_ }
 		}
 		return $Private:LogFile
 	}

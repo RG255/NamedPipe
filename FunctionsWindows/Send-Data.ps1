@@ -166,7 +166,7 @@
 	}
 	catch
 	{
-		$DataObject.$StrError = NamedPipe\Get-MyErrors -Return
+		$DataObject.$StrError = NamedPipe\Get-MyError -Return
 		$DataObject
 	}
 }

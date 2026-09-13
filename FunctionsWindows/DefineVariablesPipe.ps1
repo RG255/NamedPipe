@@ -38,10 +38,10 @@
 #
 #$MyVars = [Ordered]@{
 #}
-#Publish-Variables -Variables $MyVars
+#Publish-Variable -Variables $MyVars
 #$MyVars = @{
 #}
-#Publish-Variables -Variables $MyVars
+#Publish-Variable -Variables $MyVars
 $MyVars = [Ordered]@{
 	N03OtherVars = @{
 		StrError              = @{
@@ -368,6 +368,12 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Used in NamedPipe module for client connect timeout (milliseconds)'
 		}
+		StrChunkReadTimeout                  = @{
+			Value  = 'ChunkReadTimeout'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '2026-09-10: how long Receive-Data waits for the NEXT chunk of an ALREADY-STARTED chunked transfer (milliseconds) - NOT the first read, which stays unbounded (a slow server-side operation, or a server idling between requests, is not an anomaly). A stall between chunks IS one - the sender already started streaming, so a gap means it broke mid-transfer.'
+		}
 		StrModuleToLoad                      = @{
 			Value  = 'ModuleToLoad'
 			Scope  = $VSScript
@@ -418,7 +424,7 @@ $MyVars = [Ordered]@{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 $MyVars = @{
 	N09Finalise = @{
 		DefineVariablesPipe = @{
@@ -429,4 +435,4 @@ $MyVars = @{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars

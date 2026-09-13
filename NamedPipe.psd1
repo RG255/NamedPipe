@@ -8,12 +8,12 @@
 
 @{
 	RootModule        = 'InitialiseModule.psm1'
-	ModuleVersion     = '0.13'
+	ModuleVersion     = '0.14'
 	GUID              = 'b2a14d3e-8c7f-4e91-b035-7d2f9a1c4e56'
 	Author            = 'RayG'
 	CompanyName       = 'RayG'
 	Copyright         = '(c) 2024-2026 RayG. All rights reserved.'
-	Description       = 'Creates a named pipe server and client with chunked data transfer support for large objects. v0.13: server-side error propagation - a Write-Error raised inside a module function now reaches the client instead of presenting as success; crash diagnostics logging fixed so a crash log is no longer suppressed by an earlier discarded clean-exit. v0.12: pipe-injection hardening (default-deny AST request allowlist, medium-integrity pipe label, capability-nonce client auth, connect-deadline auto-teardown) plus leak-proof PID-verified GUI-to-terminal hand-off.'
+	Description       = 'Creates a named pipe server and client with chunked data transfer support for large objects. v0.14: PSScriptAnalyzer cleanup - plural-noun function names hard-renamed to singular (was ConvertTo-Parameters, now ConvertTo-ParameterSet; was Set-ObjectParams, now Set-ObjectParameterSet; was Get-MyErrors, now Get-MyError - a vendored CommonScripts utility, renamed at the master and re-vendored into every consumer; was Remove-Breakpoints, now Remove-Breakpoint; was Set-Breakpoints, now Set-Breakpoint), no back-compat aliases (confirmed zero external GitHub usage). v0.13: server-side error propagation - a Write-Error raised inside a module function now reaches the client instead of presenting as success; crash diagnostics logging fixed so a crash log is no longer suppressed by an earlier discarded clean-exit. v0.12: pipe-injection hardening (default-deny AST request allowlist, medium-integrity pipe label, capability-nonce client auth, connect-deadline auto-teardown) plus leak-proof PID-verified GUI-to-terminal hand-off.'
 	PowerShellVersion = '5.0'
 	RequiredModules   = @(
 		@{
@@ -28,12 +28,15 @@
 	# per-OS subset (Windows-only pipe/file commands simply don't materialise on
 	# Linux/macOS). Keep in sync with the runtime export set (Tests assert this).
 	FunctionsToExport = @(
-		'Assert-File', 'Assert-Folder', 'ConvertFrom-Serial', 'ConvertTo-Parameters',
-		'ConvertTo-Serial', 'Exit-Pipe', 'Format-MyTextLine', 'Get-ChunkBufferStatus',
-		'Get-MyErrors', 'Get-PipeServerLog', 'Initialize-BPList', 'Register-PipeEventSource',
-		'Remove-Breakpoints', 'Send-ProgressInfo', 'Send-Request', 'Set-Breakpoints', 'Set-ObjectParams',
-		'Show-PipeServerLog', 'Show-VerboseData', 'Start-PipeSession', 'Stop-PipeSession', 'Test-PipeSession',
-		'Write-MyLog'
+		'Assert-File', 'Assert-Folder', 'ConvertFrom-Serial', 'ConvertTo-ParameterSet',
+		'ConvertTo-Serial', 'Clear-MyCatchAuditLog', 'Disable-MyCatchAudit', 'Enable-MyCatchAudit', 'Exit-Pipe',
+		'Format-MyTextLine', 'Get-ChunkBufferStatus', 'Get-MyCatchAuditLog',
+		'Get-MyError', 'Get-PipeServerLog', 'Initialize-BPList', 'Invoke-MyCatchAuditTriage', 'Register-PipeEventSource',
+		'Remove-Breakpoint', 'Send-ProgressInfo', 'Send-Request', 'Set-Breakpoint', 'Set-ObjectParameterSet',
+		'Show-MyCatchAuditSummary', 'Show-PipeServerLog', 'Show-VerboseData', 'Start-PipeSession',
+		'Stop-PipeSession', 'Test-PipeSession', 'Write-MyLog'
+		# Write-MyCatchAudit deliberately NOT exported - vendored, internal-only (FunctionExportTable
+		# entry '= $false' in Functions\DefineVariables.ps1), same as every other module.
 	)
 	CmdletsToExport   = @()
 	# MUST be '*' (not @()): NamedPipe's psm1 exports its consumer-facing vocabulary

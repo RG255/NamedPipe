@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Publish-SetWindowCode.ps1 by Sync-SharedUtilities [SHA256 12CA72F9C0AEE1C353209E6DBCBDFB7AD0C62CF84C36BF65548CA3F9534E7F55] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Publish-SetWindowCode.ps1 by Sync-SharedUtilities [SHA256 E61FD13B31BA70887972AE82BB95B7BE867C93167DD49D8F8CD43418FD97346D] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Publish-SetWindowCode
 {
 	<#
@@ -15,7 +15,7 @@ Function Publish-SetWindowCode
 		Scope is limited to what Set-Window consumes. The window-lookup P/Invokes
 		(FindWindow/FindWindowEx/GetWindowThreadProcessId/GetWindowText/GetWindowTextLength/
 		EnumChildWindows) now live self-contained in Get-WindowHandleByTitle,
-		Get-ProcessIdFromWindowHandle, Get-WindowName and Get-ChildWindowHandles and are
+		Get-ProcessIdFromWindowHandle, Get-WindowName and Get-ChildWindowHandle and are
 		no longer declared here.
 		Required by: Set-Window.ps1
 	#>
@@ -26,6 +26,13 @@ Function Publish-SetWindowCode
 		{ $null = [Window] }
 		catch
 		{
+			# 2026-09-11: only audit an UNEXPECTED exception type here - a RuntimeException ("Unable to
+			# find type [Window]") is the routine, expected outcome EVERY time this function runs (it is
+			# only ever called when Set-Window's own probe already found the type missing), so auditing
+			# it every time was pure log noise, not a signal of anything worth reviewing. Everything below
+			# still runs unconditionally either way - only the audit call is gated.
+			if ($_.Exception -isnot [System.Management.Automation.RuntimeException])
+			{ Write-MyCatchAudit -Source 'Publish-SetWindowCode: [Window] type probe failed with an unexpected exception - not the routine "not yet defined" case' -ErrorRecord $_ }
 			if ($Global:Error.Count -eq [int]1)
 			{ $Global:Error.Clear() }
 
@@ -150,6 +157,16 @@ Function Publish-SetWindowCode
 	}
 	catch
 	{
+		# 2026-09-11: a genuine Add-Type compile failure here is a real, worth-investigating defect (the
+		# embedded C# is a fixed, hardcoded string - "no user input" per this function's own .DESCRIPTION
+		# - so failure here means something is deeply wrong with the .NET/PowerShell environment itself),
+		# unlike the routine "not yet defined" case above. The Write-Output line below is not a reliable
+		# way for a human to ever see this: Set-Window (this function's only caller) can be invoked from
+		# a GUI async runspace whose output stream is never displayed, or from a server-side elevated
+		# dispatch context where `exit` below would terminate that process before anyone reads its
+		# output. Write-MyCatchAudit gives this a durable, persisted record regardless of who is or isn't
+		# watching the console at that exact moment.
+		Write-MyCatchAudit -Source 'Publish-SetWindowCode: Add-Type failed to compile the [Window] type - the embedded C# is a fixed, hardcoded string, so this indicates a genuinely broken .NET/PowerShell environment, not routine first-use behavior' -ErrorRecord $_
 		Write-Output -InputObject 'Publish-SetWindowCode: Failed to compile [Window] type'
 		exit
 	}

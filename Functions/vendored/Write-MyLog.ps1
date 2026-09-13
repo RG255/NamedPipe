@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Write-MyLog.ps1 by Sync-SharedUtilities [SHA256 8D933E49ADBD10213B3ECA08074E6B44629CFBF209A812616FB0A8D25708DC6A] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Write-MyLog.ps1 by Sync-SharedUtilities [SHA256 8C78BCFCF84094A2867C7972D2A9BBA29B5ACBEA3B5F918C89E106502204A291] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Write-MyLog
 {
 	<#
@@ -81,7 +81,10 @@ Function Write-MyLog
 		{ Out-File -Encoding $Encoding -FilePath $PathToLogFile -Append -InputObject $Private:MsgInfo }
 	}
 	catch
-	{ Write-Warning ('Write-MyLog: could not write to [{0}]: {1}' -f $PathToLogFile, $_.Exception.Message) }
+	{
+		Write-Warning ('Write-MyLog: could not write to [{0}]: {1}' -f $PathToLogFile, $_.Exception.Message)
+		Write-MyCatchAudit -Source 'Write-MyLog: write to the optional diagnostic log file - a logging failure must never take down the operation it is observing' -ErrorRecord $_
+	}
 
 	# Mirror to console if requested and session is interactive
 	if ($Console.IsPresent -and [Environment]::UserInteractive)

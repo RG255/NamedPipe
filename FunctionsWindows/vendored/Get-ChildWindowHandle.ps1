@@ -1,5 +1,5 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-ChildWindowHandles.ps1 by Sync-SharedUtilities [SHA256 A1CEFC4F19E1388C512C82A44417BB1BB4BB8D32CB143B29B1F9A5144404DD61] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
-Function Get-ChildWindowHandles
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-ChildWindowHandle.ps1 by Sync-SharedUtilities [SHA256 ADB0B50E64A92A3547C76205FEE85E69509611ED39EC0E06AB6203F8CB29C5D8] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+Function Get-ChildWindowHandle
 {
 	<#
 		.SYNOPSIS

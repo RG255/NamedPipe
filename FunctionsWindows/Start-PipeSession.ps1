@@ -16,7 +16,7 @@
 
 		.PARAMETER MyParameters
 		The caller's bound parameters, typically $PSCmdlet.MyInvocation.BoundParameters.
-		These flow through Set-ObjectParams to configure the pipe session.
+		These flow through Set-ObjectParameterSet to configure the pipe session.
 
 		.PARAMETER Options
 		Optional hashtable of overrides to apply to MyOptions after initial creation.
@@ -53,13 +53,13 @@
 	{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
 
 	# Step 1: Create MyOptions from caller's bound parameters
-	$Private:MyOptions = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $MyParameters
+	$Private:MyOptions = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $MyParameters
 
 	# Step 2: Apply any overrides
 	foreach ($Private:Key in $Options.Keys)
 	{$Private:MyOptions.$Private:Key = $Options[$Private:Key]}
 
-	# Step 3: Handle AccessList - pass through MyOptions so Set-ObjectParams Server picks it up
+	# Step 3: Handle AccessList - pass through MyOptions so Set-ObjectParameterSet Server picks it up
 	if ($AccessList)
 	{$Private:MyOptions.$StrAccessIdentifier = $AccessList}
 	elseif (-not $MyParameters.$StrAccessIdentifier)
@@ -71,8 +71,8 @@
 	}
 
 	# Step 4: Create ServerClientParams (server side) and SendRequestParams
-	$Private:ServerClientParams = Set-ObjectParams -Server -Dataset $StrServerClientParams -MyParameters $Private:MyOptions
-	$Private:SendRequestParams = Set-ObjectParams -Dataset $StrSendRequestParams -MyParameters $Private:ServerClientParams
+	$Private:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Private:MyOptions
+	$Private:SendRequestParams = Set-ObjectParameterSet -Dataset $StrSendRequestParams -MyParameters $Private:ServerClientParams
 
 	# Debug output
 	If ($Private:ServerClientParams.$StrInfoDisplay -band 2)
@@ -89,7 +89,7 @@
 	{Show-VerboseData -Object $Private:SendRequestParams.$StrDataObject -Display -Title 'DataObject Before Client started'}
 
 	# Step 7: Switch to client and connect
-	$Private:ServerClientParams = Set-ObjectParams -Client -Dataset $StrServerClientParams -MyParameters $Private:ServerClientParams
+	$Private:ServerClientParams = Set-ObjectParameterSet -Client -Dataset $StrServerClientParams -MyParameters $Private:ServerClientParams
 
 	$Private:SendRequestParams.$StrDataObject.$StrClientPID = $Pid
 	$Private:SendRequestParams.$StrDataObject.$StrClientUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name

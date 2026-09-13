@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Format-MyTextLine.ps1 by Sync-SharedUtilities [SHA256 1A0D38D4A2850E806CDEBF1876B6C4A6F745D77DD8A16D401F15AFC6696A6CF8] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Format-MyTextLine.ps1 by Sync-SharedUtilities [SHA256 ABCF1C4E50810EF258D9A5BFFBC32A7B8148C07019F6915755DBDDD8C471EC83] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Format-MyTextLine
 {
 	<#
@@ -119,7 +119,10 @@ Function Format-MyTextLine
 		try
 		{ $Private:MyWWidth = (Get-Host).UI.RawUI.WindowSize.Width }
 		catch
-		{ $Private:MyWWidth = 0 }
+		{
+			$Private:MyWWidth = 0
+			Write-MyCatchAudit -Source 'Format-MyTextLine: read host RawUI window width - host does not support it (e.g. redirected/non-interactive), falls back to NoWrap' -ErrorRecord $_
+		}
 	}
 
 	if ($Private:MyWWidth -le 0)

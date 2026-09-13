@@ -19,7 +19,7 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 - **Consumer module tracking** - spawned server automatically imports consumer modules
 - Cross-version support (PowerShell 5.1 and PowerShell 7+)
 
-**Self-contained:** All required functions (ConvertTo-Serial, ConvertFrom-Serial, Get-MyErrors, Show-VerboseData, Set-Window, etc.) are included within the NamedPipe module itself - no external dependencies.
+**Self-contained:** All required functions (ConvertTo-Serial, ConvertFrom-Serial, Get-MyError, Show-VerboseData, Set-Window, etc.) are included within the NamedPipe module itself - no external dependencies.
 
 ### What's New in v0.4
 
@@ -32,7 +32,7 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 | `ModuleToLoad` | Spawned server imports consumer module via Options (replaces `$ML`/`$ModuleLoaded`) |
 | AccessList default | Defaults to current user only (no Unbound) |
 | `InfoDisplayBit*` constants | Named constants for InfoDisplay bitmask bits: `$InfoDisplayBitProgress` (1), `$InfoDisplayBitVerbose` (2), `$InfoDisplayBitDebug` (4) |
-| ConvertTo-Parameters fix | Empty string parameter values now serialise as `''` instead of nothing, preventing ParseException in dynamically created scriptblocks |
+| ConvertTo-ParameterSet fix | Empty string parameter values now serialise as `''` instead of nothing, preventing ParseException in dynamically created scriptblocks |
 
 ### What's New in v0.5
 
@@ -62,7 +62,7 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 
 See `_PlanningDocs\NamedPipe\0.13\PIPE-INJECTION-HARDENING-PLAN.md` for the full plan and its current
 status. The mechanism below is complete and has shipped in every version since 0.10 (current live
-version is 0.13 - every real consumer is on the hardened transport line). It remains fully **opt-in per
+version is 0.14 - every real consumer is on the hardened transport line). It remains fully **opt-in per
 session**: as of 2026-08-14 no consumer has actually set `RequestPolicy`, so behaviour is IDENTICAL to
 0.9 for everyone today unless you opt in to the option below yourself. (The planning doc's Section 9
 records why adoption is not currently recommended for any consumer here - the request policy itself
@@ -88,7 +88,7 @@ $Session = Start-PipeSession -MyParameters $Private:MyBoundParameters -Options @
 
 Notes:
 - Argument VALUES stay free (paths, sizes, ...); only the command surface and argument *shape* are
-  constrained. Values are still escaped by `ConvertTo-Parameters`.
+  constrained. Values are still escaped by `ConvertTo-ParameterSet`.
 - The "ship helper functions inside the scriptblock" pattern is refused under a policy - move that logic
   into a named server function (the dispatch shape, e.g. `Invoke-VHDAction`, which is exactly what passes).
 - Strict by default: computed arguments (`$( )`, `-f`, command substitution, interpolated strings) are
@@ -482,7 +482,9 @@ Param (
     [ValidateRange(1, [Int32]::MaxValue)]
     $ServerWaitTimeout = 60,
     [ValidateRange(1, [Int32]::MaxValue)]
-    $ClientConnectTimeout = 10000
+    $ClientConnectTimeout = 10000,
+    [ValidateRange(1, [Int32]::MaxValue)]
+    $ChunkReadTimeout = 30000
 )
 ```
 
@@ -602,6 +604,7 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 | `Verbose` | Bool | $False | Enable verbose output |
 | `ServerWaitTimeout` | Int | 60 | Seconds the server waits for a client connection |
 | `ClientConnectTimeout` | Int | 10000 | Milliseconds the client waits to connect to the server |
+| `ChunkReadTimeout` (v0.13+) | Int | 30000 | Milliseconds Receive-Data waits for the NEXT chunk of an already-started chunked transfer. Does NOT apply to the first read of a message (waiting for a server-side operation to complete, or for the server's next request, has no timeout - both are normal, not stalls) - only to a gap AFTER a transfer has already begun, which means the sender broke mid-stream. |
 
 ### RedactPattern (v0.5+)
 
@@ -643,7 +646,7 @@ $Session = Start-PipeSession -MyParameters $Private:MyBoundParameters -AccessLis
 'Username:Allow'                  # Shorthand - becomes 'Username:Allow:ReadWrite'
 ```
 
-Access identifiers are validated by `Test-UserOrGroupExists` which checks that the user or group exists locally before the pipe is created.
+Access identifiers are validated by `Test-AccessIdentifier` which checks that the user or group exists locally before the pipe is created.
 
 ## Data Structures
 
@@ -675,7 +678,7 @@ The pipe connection details:
 - `Pipe` - The NamedPipeServerStream or NamedPipeClientStream object
 - `Reader` - StreamReader for the pipe
 - `Writer` - StreamWriter for the pipe
-- `InfoDisplay` / `ChunkSize` / `Depth` - Copied from ServerClientParams
+- `InfoDisplay` / `ChunkSize` / `Depth` / `ChunkReadTimeout` (v0.13+) - Copied from ServerClientParams
 
 ## InfoDisplay Bitmask
 
@@ -864,7 +867,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.13' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.14' }
     )
 }
 ```
@@ -929,7 +932,9 @@ Param (
     [ValidateRange(1, [Int32]::MaxValue)]
     $ServerWaitTimeout = 60,
     [ValidateRange(1, [Int32]::MaxValue)]
-    $ClientConnectTimeout = 10000
+    $ClientConnectTimeout = 10000,
+    [ValidateRange(1, [Int32]::MaxValue)]
+    $ChunkReadTimeout = 30000
 )
 
 # Import the module
@@ -1011,21 +1016,21 @@ These are exported and available to consumers:
 | `Test-PipeSession` | Non-disruptive pipe health check |
 | `Stop-PipeSession` | Clean shutdown with ExitPipe + dispose |
 | `Send-Request` | Sends a request from client to server |
-| `Set-ObjectParams` | Creates and initialises data structures |
+| `Set-ObjectParameterSet` | Creates and initialises data structures |
 | `ConvertTo-Serial` | Serializes objects to Base64 with optional chunking |
 | `ConvertFrom-Serial` | Deserializes Base64 data back to objects |
-| `ConvertTo-Parameters` | Converts hashtables to parameter strings |
+| `ConvertTo-ParameterSet` | Converts hashtables to parameter strings |
 | `Format-MyTextLine` | Text formatting utility |
 | `Show-VerboseData` | Displays formatted debug output |
-| `Get-MyErrors` | Formats error information for diagnostics |
+| `Get-MyError` | Formats error information for diagnostics |
 | `Write-MyLog` | Logging utility |
 | `Set-Window` | Manipulates window position, size, and state |
 | `Exit-Pipe` | Gracefully closes pipe on error conditions |
 | `Assert-File` | File assertion utility |
 | `Assert-Folder` | Folder assertion utility |
 | `Initialize-BPList` | Breakpoint list initialisation |
-| `Remove-Breakpoints` | Removes breakpoints |
-| `Set-Breakpoints` | Sets breakpoints |
+| `Remove-Breakpoint` | Removes breakpoints |
+| `Set-Breakpoint` | Sets breakpoints |
 | `Send-ProgressInfo` | Sends progress messages from server to client |
 
 ### Internal Functions (Not Exported)
@@ -1038,7 +1043,7 @@ These are used internally by the module and are not available to consumers:
 | `Receive-Data` | Receives and deserializes data from the pipe |
 | `Get-SBResult` | Executes scriptblock requests on the server |
 | `Set-PipeSecurity` | Creates pipe access control rules |
-| `Test-UserOrGroupExists` | Validates access identifier strings |
+| `Test-AccessIdentifier` | Validates access identifier strings |
 | `Get-NewPipeName` | Generates unique pipe names |
 | `Publish-SetWindowCode` | Compiles Win32 P/Invoke code |
 
@@ -1048,7 +1053,7 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.13   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.14   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
 
@@ -1069,6 +1074,15 @@ $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before impor
 ### Connection timeout
 **Cause**: Server not ready when client tries to connect, or pipe name mismatch.
 **Solution**: Increase `ServerWaitTimeout` (seconds) and/or `ClientConnectTimeout` (milliseconds).
+
+### "timed out ... waiting for the next chunk of transfer ..." (v0.13+)
+**Cause**: A chunked transfer started (the first chunk arrived) but the sender stopped sending
+before finishing it - a crash, a dropped connection, or a hung process on the sending side. This
+is NOT the same as a slow server-side operation - the initial wait for a request/response has no
+timeout at all, precisely so a genuinely long-running operation is never mistaken for a stall.
+**Solution**: This is a real failure on the sending side, not a false positive to tune away in the
+normal case. If a specific environment's link is unusually slow BETWEEN chunks of a single large
+transfer (not the initial wait), increase `ChunkReadTimeout` (milliseconds, default 30000).
 
 ### "Module not found" in server process
 **Cause**: Module not installed in the PSModulePath.

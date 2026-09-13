@@ -7,7 +7,7 @@
 **SECURITY ADVISORY**: v0.8 contains a critical code injection vulnerability that allows remote code execution on the server. All deployments must be upgraded to v0.9 immediately.
 
 #### 1. Code Injection in Parameter Handling (CVE-equivalent)
-- **File**: `Functions/ConvertTo-Parameters.ps1`
+- **File**: `Functions/ConvertTo-ParameterSet.ps1`
 - **Issue**: String parameters were not properly escaped before embedding into scriptblocks
 - **Attack Vector**: Malicious hashtable parameters could inject arbitrary PowerShell commands
 - **Fix**: All string values now properly escaped with quote escaping
@@ -21,7 +21,7 @@
 - **Status**: ✓ ADDED
 
 #### 3. Access Identifier Validation Hardened
-- **File**: `FunctionsWindows/Test-UserOrGroupExists.ps1`
+- **File**: `FunctionsWindows/Test-AccessIdentifier.ps1`
 - **Issue**: Weak validation allowing malformed identifiers
 - **Fix**: Strict validation of identifier format and whitespace checks
 - **Status**: ✓ IMPROVED
@@ -29,7 +29,7 @@
 ### File Changes
 
 ```
-Functions/ConvertTo-Parameters.ps1
+Functions/ConvertTo-ParameterSet.ps1
 - Added proper quote escaping for string values
 - Added array handling with escaping
 - Updated help text to document security measures
@@ -39,7 +39,7 @@ Functions/Get-SBResult.ps1
 - Improved error messages for invalid commands
 - Updated documentation to mention security validation
 
-FunctionsWindows/Test-UserOrGroupExists.ps1
+FunctionsWindows/Test-AccessIdentifier.ps1
 - Stricter part count validation (1-3 only)
 - Added null/whitespace checks on identity
 - Better error messages per validation type

@@ -38,10 +38,10 @@
 #
 #$MyVars = [Ordered]@{
 #}
-#Publish-Variables -Variables $MyVars
+#Publish-Variable -Variables $MyVars
 #$MyVars = @{
 #}
-#Publish-Variables -Variables $MyVars
+#Publish-Variable -Variables $MyVars
 $MyVars = [Ordered]@{
 	N00ConstantVars = @{
 		StrProgressInfo    = @{
@@ -76,7 +76,7 @@ $MyVars = [Ordered]@{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 $MyVars = @{
 	N09Finalise = @{
 		DefineVariablesCommon = @{
@@ -87,4 +87,4 @@ $MyVars = @{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars

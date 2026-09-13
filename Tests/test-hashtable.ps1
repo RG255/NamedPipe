@@ -6,8 +6,8 @@ $VONone = 'None'
 $VOReadOnly = 'ReadOnly'
 
 # Function to capture MyVars
-function Publish-Variables {
-	Write-Host "Publish-Variables called. Checking MyVars:" -ForegroundColor Cyan
+function Publish-Variable {
+	Write-Host "Publish-Variable called. Checking MyVars:" -ForegroundColor Cyan
 	foreach ($VarSet in $MyVars.Keys) {
 		Write-Host "  VarSet: $VarSet" -ForegroundColor Yellow
 		foreach ($Item in $MyVars[$VarSet].Keys | Sort-Object) {

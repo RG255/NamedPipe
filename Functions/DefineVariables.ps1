@@ -45,7 +45,7 @@ $MyVars = [Ordered]@{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 $MyVars = [Ordered]@{
 	N00ConstantVars = @{
 		VInfoOn    = @{
@@ -90,7 +90,7 @@ $MyVars = [Ordered]@{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 $MyVars = @{
 	N01ReadOnlyVars = @{
 		VSGlobal   = @{
@@ -125,18 +125,18 @@ $MyVars = @{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 
 $script:FunctionExportTable = @{
 	# Cross-platform (Functions/)
 	'ConvertFrom-Serial'       = $true
 	'ConvertTo-Serial'         = $true
-	'ConvertTo-Parameters'     = $true
+	'ConvertTo-ParameterSet'     = $true
 	'Format-MyTextLine'        = $true
-	'Get-MyErrors'             = $true
+	'Get-MyError'             = $true
 	'Get-SBResult'             = $false   # internal - server-side only
 	'Test-RequestPolicy'       = $false   # internal - server-side request allowlist (0.10 injection hardening)
-	'Set-ObjectParams'         = $true
+	'Set-ObjectParameterSet'         = $true
 	'Write-MyLog'              = $true
 	# Windows (FunctionsWindows/)
 	'Assert-File'              = $true
@@ -145,11 +145,11 @@ $script:FunctionExportTable = @{
 	'Get-NewPipeName'          = $false   # internal
 	'Initialize-BPList'        = $true
 	'Receive-Data'             = $false   # internal
-	'Remove-Breakpoints'       = $true
+	'Remove-Breakpoint'       = $true
 	'Send-Data'                = $false   # internal
 	'Send-ProgressInfo'        = $true
 	'Send-Request'             = $true
-	'Set-Breakpoints'          = $true
+	'Set-Breakpoint'          = $true
 	'Set-PipeSecurity'         = $false   # internal
 	'Set-PipeIntegrityLabel'   = $false   # internal - 0.11 mandatory-label hardening (4.1b)
 	'Add-ServerLogEntry'       = $false   # internal - 0.11 diagnostics log (4.5 step 1a)
@@ -161,11 +161,14 @@ $script:FunctionExportTable = @{
 	'Set-MyWindowState'        = $false   # internal - VENDORED from CommonScripts (lightweight ShowWindow hide/restore; replaced Set-Window)
 	'Show-VerboseData'         = $true
 	'Start-PipeServerOrClient' = $false   # internal - use Start-PipeSession instead
-	'Test-UserOrGroupExists'   = $false   # internal
+	'Test-AccessIdentifier'   = $false   # internal
 	# New 0.3 functions
 	'Start-PipeSession'        = $true
 	'Test-PipeSession'         = $true
 	'Stop-PipeSession'         = $true
+	# Catch-audit vendoring (2026-09-09) - see Modules\Shared-Usage.psd1's EXCEPTION note. The other
+	# 4 default to $true (exported) by NOT being listed here, same as every other name above.
+	'Write-MyCatchAudit'       = $false   # internal - vendored, same treatment as Get-MyError
 }
 
 $script:DefaultModuleToLoad = @{
@@ -482,7 +485,7 @@ $MyVars = @{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 $MyVars = @{
 	N03OtherVars = @{
 		LogFilePath            = @{
@@ -612,7 +615,7 @@ $MyVars = @{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars
 $MyVars = @{
 	N09Finalise = @{
 		DefineVariables = @{
@@ -623,4 +626,4 @@ $MyVars = @{
 		}
 	}
 }
-Publish-Variables -Variables $MyVars
+Publish-Variable -Variables $MyVars

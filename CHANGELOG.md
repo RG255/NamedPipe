@@ -1,6 +1,93 @@
 # NamedPipe Changelog
 
+## Version 0.14 - 2026-09-12 (branched 2026-09-12)
+
+### Breaking changes
+PSScriptAnalyzer cleanup pass (see the repo's `_PlanningDocs\_Repo\2026-09-12_PSSA-Cleanup-Plan.md`).
+Zero external usage confirmed (public repo, 0 stars/forks/subscribers/releases) - hard renames, no
+back-compat aliases:
+
+- `ConvertTo-Parameters` -> `ConvertTo-ParameterSet`
+- `Set-ObjectParams` -> `Set-ObjectParameterSet`
+- `Remove-Breakpoints` -> `Remove-Breakpoint`
+- `Set-Breakpoints` -> `Set-Breakpoint`
+- `Get-MyErrors` -> `Get-MyError` - a vendored CommonScripts utility (not NamedPipe's own), renamed
+  at the master and re-vendored into every consumer (NamedPipe, VHDTools); ConfigureDefender and
+  DnsTools only referenced it in doc-comments, not actual vendored code, so no functional change
+  there. NamedPipe 0.13's own vendored copy is left untouched (frozen backstop).
+- `Test-UserOrGroupExists` -> `Test-AccessIdentifier` (not exported) - not just a lint dodge: the
+  function validates a full `Identity:AllowOrDeny:AccessRight` string end-to-end, and
+  "AccessIdentifier" names what is actually validated where "UserOrGroupExists" only ever described
+  the identity-lookup part.
+- Internal-only: `Initialize-Folders` -> `Initialize-Folder`, `Publish-Variables` -> `Publish-Variable`,
+  `Invoke-InitFunctions` -> `Invoke-InitFunction` (all three defined inline in `InitialiseModule.psm1`).
+- `Get-ChildWindowHandles` -> `Get-ChildWindowHandle` - another vendored CommonScripts utility (like
+  `Get-MyError`), renamed at the master to match its already-singular siblings
+  (`Get-WindowHandleByTitle`, `Get-ProcessIdFromWindowHandle`) and re-vendored into every consumer
+  (NamedPipe, VHDTools, InstalledInventory). `Set-Window.ps1`'s own internal call site (its only real
+  caller) was updated at the master too. NamedPipe 0.13's vendored copies of both
+  `Get-ChildWindowHandles.ps1` and `Set-Window.ps1`/`Publish-SetWindowCode.ps1` are left untouched
+  (frozen backstop) - the first attempt at this sync briefly broke 0.13 by pulling the master's
+  updated `Set-Window.ps1` (which now calls the new name) into 0.13 without also renaming 0.13's own
+  `Get-ChildWindowHandles.ps1`; fixed by removing all three files from 0.13's tracked vendored set in
+  `Shared-Usage.psd1`.
+
+### Repo tooling fixed as a result of this branch
+`Tools\Test-ModuleVersionSelfReference.ps1` gained a 4th FUNCTIONAL self-reference shape:
+`Get-Module | Where-Object { $_.Version -eq '<old>' }`. Four test scripts in this branch used exactly
+that pattern to pin to the pre-rename NamedPipe instance - invisible to the checker's original three
+shapes (`Import-Module`/`-RequiredVersion`/`ModuleToLoad`), so it reported 0 functional findings while
+Pester actually failed 4 tests. Found by running the Pester suite, not the checker; the checker itself
+is now fixed so the next branch catches this class of bug directly.
+
+### Not renamed (vendored, left as accepted debt)
+The nested `Set-WindowParameters` function (inside `Set-Window.ps1`) is also a `PSUseSingularNouns`
+hit, but renaming it would mean editing live logic inside a vendored file shared with VHDTools and
+InstalledInventory beyond the one already-updated call site - left as accepted debt, matching
+`CLAUDE.md`'s existing guidance for already-exported plural names.
+
 ## Version 0.13 - 2026-08-13 (branched 2026-08-11)
+
+### Fixes - health-pipe listener catch-audit visibility (2026-09-11)
+
+- **The health-pipe PING/PONG listener's two catches were silently unrecoverable.** That loop runs
+  inside a bare `[RunspaceFactory]::CreateRunspace()` runspace with no module functions loaded into
+  it, so `Write-MyCatchAudit` genuinely could not be called there - the function isn't loaded (calling
+  it would throw a NEW unhandled error from inside the catch), and even a dot-sourced copy would
+  append into that runspace's OWN separate `$Global:MyCatchAuditLog`, which nothing else ever reads
+  (PowerShell's `$Global:` scope is runspace-local, not process-wide).
+  New `Write-HealthPipeCatchRecord.ps1` - a hand-written, disk-only analog of `Write-MyCatchAudit` -
+  is dot-sourced into that runspace at runtime (its file path, and the resolved persisted-log path,
+  cross the runspace boundary as plain argument strings, which do carry over) and persists straight to
+  the shared `$env:ProgramData\CatchAudit\CatchAudit.jsonl` log, bypassing `$Global:` capture entirely.
+  Entries are tagged `Origin: 'HealthPipeListener'` so they're identifiable, and carry the same
+  `-Teardown`/live-echo semantics as `Write-MyCatchAudit` (`$env:MyCatchAuditVerbose` is OS-process-
+  level, so the toggle still works with no extra plumbing). The listener's per-iteration pipe
+  `Dispose()` (a genuine teardown catch, inside its own `Finally`) uses `-Teardown`; the main
+  `WaitForConnection`/read/respond cycle catch does not.
+
+### Fixes - Receive-Data reliability (2026-09-10)
+
+- **A failed deserialize could silently return `$null` with no error set.** `Receive-Data`'s
+  non-chunked path assumed `$received.IsChunked -eq $false` meant "a legitimate single message,"
+  without ever checking that `$received` was actually something - a malformed line throws (already
+  caught), but a line that legitimately deserializes to a genuine `$null` fell through to
+  `$DataObject = $received` = `$null`, with `.Error` never set. Now checked explicitly and routed
+  through the same `throw` -> outer `Catch` -> `.Error` convention every other failure path here
+  already uses.
+- **No timeout existed anywhere in `Receive-Data`, including waiting for the NEXT chunk of an
+  already-started transfer.** A sender that began streaming chunks and then broke mid-transfer
+  (crash, dropped connection, hung process) left the receiving side blocked forever with no error -
+  not a hang a caller could detect or recover from. Added `ChunkReadTimeout` (new PipeInfo/Options
+  field, default 30000ms, flows through the same ServerClientParams -> PipeInfo path as `ChunkSize`/
+  `Depth`) bounding ONLY that chunk-continuation read. The FIRST read (waiting for a request/response,
+  where a slow-but-healthy server-side operation is legitimately indistinguishable from "nothing
+  yet") is deliberately left unbounded - timing that out would misfire on exactly the case that
+  should succeed.
+- New integration coverage exercises `Receive-Data` itself over a real pipe (previously only its
+  `ConvertTo-Serial`/`ConvertFrom-Serial` layer was tested): single message, multi-chunk, corrupted
+  checksum, unexpected mid-chunk data, failed deserialize, an unbounded-by-design first read, and the
+  new `ChunkReadTimeout` firing on a genuine mid-chunk stall.
 
 ### Fixes - server-side errors reaching the client
 
@@ -76,7 +163,7 @@
 - Regression tests: `Tests\Test-PipeIntegrityLabel.ps1` (Low-IL blocked / Medium allowed) and a label
   check in `Tests\Start-PipeTest.ps1`.
 - **Capability-nonce client authentication (hardening 4.2):** the server holds a per-session nonce
-  (auto-generated in `Set-ObjectParams`, carried in `ServerClientParams`, so both the spawned server and
+  (auto-generated in `Set-ObjectParameterSet`, carried in `ServerClientParams`, so both the spawned server and
   the inheriting client share it). On every connection the server reads the client's FIRST line and admits
   it only if it matches the nonce; a wrong or absent first line is disconnected and the server keeps
   listening. Admission is by the SECRET, not by PID - so the VHDTools GUI->terminal hand-off (a different
@@ -216,16 +303,16 @@
 - **FunctionsWindows** (9 files permanently removed):
   - Assert-File.ps1, Assert-Folder.ps1, Assert-Links.ps1
   - Assert-Service.ps1, Assert-UserGroup.ps1
-  - Initialize-BPList.ps1, Set-Breakpoints.ps1, Remove-Breakpoints.ps1
+  - Initialize-BPList.ps1, Set-Breakpoint.ps1, Remove-Breakpoint.ps1
   - ~~Publish-Code.ps1~~ (restored - required by Set-Window)
-  - ~~Test-UserOrGroupExists.ps1~~ (restored - required by Set-ObjectParams)
+  - ~~Test-AccessIdentifier.ps1~~ (restored - required by Set-ObjectParameterSet)
 - **Functions** (7 files permanently removed):
   - Convert-BytesToFile.ps1, Convert-FileToBytes.ps1
   - ConvertFrom-Base64.ps1, ConvertTo-Base64.ps1
   - Expand-String.ps1, Expand-Variables.ps1
   - Get-ConfigurationFile.ps1, Get-FreeDriveLetter.ps1
   - ~~Get-SBResult.ps1~~ (restored - core pipe function)
-  - ~~ConvertTo-Parameters.ps1~~ (restored - required by Get-SBResult)
+  - ~~ConvertTo-ParameterSet.ps1~~ (restored - required by Get-SBResult)
 - **Net Impact**: 16 files removed (41% reduction), focused solely on named pipe IPC
 
 #### 8. Trimmed DefineVariables.ps1
@@ -264,8 +351,8 @@
 After testing, discovered some removed files were actually needed:
 - **Publish-Code.ps1** (FunctionsWindows): Required by Set-Window - compiles C# Window class for Win32 API calls
 - **Get-SBResult.ps1** (Functions): Core pipe function - executes scriptblocks sent through pipe
-- **ConvertTo-Parameters.ps1** (Functions): Required dependency for Get-SBResult
-- **Test-UserOrGroupExists.ps1** (FunctionsWindows): Required dependency for Set-ObjectParams access control validation
+- **ConvertTo-ParameterSet.ps1** (Functions): Required dependency for Get-SBResult
+- **Test-AccessIdentifier.ps1** (FunctionsWindows): Required dependency for Set-ObjectParameterSet access control validation
 - **Impact**: These functions are essential for core pipe functionality
 
 ### Version Update
@@ -285,15 +372,15 @@ After testing, discovered some removed files were actually needed:
 8. `InitialiseModule.psm1` - Fixed variable existence check bug
 
 **Removed (16 files):**
-- FunctionsWindows: Assert-* (5 files), Initialize-BPList, Set/Remove-Breakpoints
+- FunctionsWindows: Assert-* (5 files), Initialize-BPList, Set/Remove-Breakpoint
 - Functions: Convert-BytesToFile/FileToBytes, ConvertFrom/To-Base64, Expand-*, Get-ConfigurationFile, Get-FreeDriveLetter
 
 **Restored (4 files - required dependencies):**
-- FunctionsWindows: Publish-Code, Test-UserOrGroupExists
-- Functions: Get-SBResult, ConvertTo-Parameters
+- FunctionsWindows: Publish-Code, Test-AccessIdentifier
+- Functions: Get-SBResult, ConvertTo-ParameterSet
 
 **Final Count (25 files):**
-- 16 FunctionsWindows: Core pipe functions + 3 DefineVariables*.ps1 + Publish-Code + Test-UserOrGroupExists
+- 16 FunctionsWindows: Core pipe functions + 3 DefineVariables*.ps1 + Publish-Code + Test-AccessIdentifier
 - 9 Functions: Core helpers (serialization, scriptblock execution, logging, error handling, text formatting)
 
 ## Backward Compatibility
@@ -326,10 +413,10 @@ The following were identified during code review but not changed in v0.9 (workin
 ### After Trimming (Final)
 - **Functions folder**: 9 .ps1 files (removed 7, restored 2)
   - Removed: Convert-Bytes*, Base64, Expand-*, Get-ConfigurationFile, Get-FreeDriveLetter
-  - Restored: Get-SBResult, ConvertTo-Parameters
+  - Restored: Get-SBResult, ConvertTo-ParameterSet
 - **FunctionsWindows folder**: 16 .ps1 files (removed 9, restored 2)
-  - Removed: Assert-* (5), Initialize-BPList, Set/Remove-Breakpoints
-  - Restored: Publish-Code, Test-UserOrGroupExists
+  - Removed: Assert-* (5), Initialize-BPList, Set/Remove-Breakpoint
+  - Restored: Publish-Code, Test-AccessIdentifier
 - **Total**: 25 function files (9 Functions, 16 FunctionsWindows)
 - **DefineVariables.ps1**: ~300 lines, 25 variables
 - **Exported functions**: 24 functions (20 core pipe + 4 window helper functions)

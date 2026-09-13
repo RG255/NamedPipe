@@ -30,9 +30,9 @@ Function Start-PipeTest
 	)
 
 	Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-	# Use the DEPLOYED 0.13 by name+version (the spawned server re-resolves the module and the
-	# source dev folder is not on PSModulePath, which caused connect timeouts). Deploy 0.13 first.
-	Import-Module -Name NamedPipe -Force -RequiredVersion 0.13
+	# Use the DEPLOYED 0.14 by name+version (the spawned server re-resolves the module and the
+	# source dev folder is not on PSModulePath, which caused connect timeouts). Deploy 0.14 first.
+	Import-Module -Name NamedPipe -Force -RequiredVersion 0.14
 	function Invoke-RequiredActions
 	{
 		<#
@@ -68,7 +68,7 @@ Function Start-PipeTest
 
 		# Get the current secirity setting on the pipe
 		$SendRequestParams.$StrType = $StrSecurity
-		$SendRequestParams.$StrDataObject = '' | 
+		$SendRequestParams.$StrDataObject = '' |
 			Send-Request @SendRequestParams
 
 		If ($ServerClientParams.$StrInfoDisplay -band 2)
@@ -79,18 +79,18 @@ Function Start-PipeTest
 			'Server user is: [{0}]' -f $SendRequestParams.$StrDataObject.$StrServerUser
 			$count = $SendRequestParams.$StrDataObject.Result.count-1
 			'   Security is:'
-			if ($PSVersionTable.PSVersion.Major -gt 5) 
+			if ($PSVersionTable.PSVersion.Major -gt 5)
 			{$SendRequestParams.$StrDataObject.Result.accesstostring}
 			else
 			{$SendRequestParams.$StrDataObject.Result[0..$count]}
 			Show-VerboseData -Object $SendRequestParams.$StrDataObject -Display -Title 'Data Object After Security call'
 		}
-	
+
 		$SendRequestParams.$StrType = $StrScriptBlock
-	
-		#Remove-Breakpoints -All
+
+		#Remove-Breakpoint -All
 		#$BPList = Initialize-BPList -AddModules
-	
+
 		#$BPList.'Start-PipeServerorClient'.lines.line = 140
 		#$BPList.'Start-PipeServerorClient'.lines.Script = $BPList.'Start-PipeServerorClient'.Fullname
 		#$BPList.'Receive-Data'.lines.line = 22
@@ -100,43 +100,43 @@ Function Start-PipeTest
 
 		# Set any defined breakpoints
 		#$SendRequestParams.$StrDataObject.$StrData = $BPList
-		#$SendRequestParams.$StrDataObject = 'Set-Breakpoints -BPObject $DataObject.data' | 
+		#$SendRequestParams.$StrDataObject = 'Set-Breakpoint -BPObject $DataObject.data' |
 		#Send-Request @SendRequestParams
 		#$BPList = $SendRequestParams.$StrDataObject.$StrResult
-	
+
 		#$BPList = Initialize-BPList -AddModules
 		#$BPList.'Get-SBResult'.lines.line=12
 		#$BPList.'Get-SBResult'.lines.Script=$BPList.'Get-SBResult'.Fullname
 		#$BPList.'Show-VerboseData'.lines.line = 106
 		#$BPList.'Show-VerboseData'.lines.Script = $BPList.'Show-VerboseData'.Fullname
-			
+
 		#$SendRequestParams.$StrDataObject.$StrData = $BPList
-		#$SendRequestParams.$StrDataObject = 'Set-Breakpoints -BPObject $DataObject.data' |
+		#$SendRequestParams.$StrDataObject = 'Set-Breakpoint -BPObject $DataObject.data' |
 		#Send-Request @SendRequestParams
 		#$BPList = $SendRequestParams.$StrDataObject.$StrResult
-	
+
 		#$SendRequestParams.$StrDataObject.$Strdata = $BPList
-		#$SendRequestParams.$StrDataObject = 'Set-Breakpoints -BPObject $DataObject.data' | 
+		#$SendRequestParams.$StrDataObject = 'Set-Breakpoint -BPObject $DataObject.data' |
 		#Send-Request @SendRequestParams
-	
+
 		$SWParam =@{
 			Passthru =$true
 			Set = $True
 		}
-	
+
 		$SendRequestParams.$StrDataObject.$StrParameters = $SWParam
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId {0} -State {1}' -f $SendRequestParams.$StrDataObject.$StrServerPID, $StrRestore|
 			Send-Request @SendRequestParams
-	
+
 		if ($SendRequestParams.$StrDataObject.$StrError)
 		{write-information -MessageData $SendRequestParams.$StrDataObject.$StrError -InformationAction Continue}
-	
+
 		$SendRequestParams.$StrDataObject = 'Write-Host -Object "{0}" -Foreground Green' -f 'Hello World' |
 			Send-Request @SendRequestParams
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId {0} -State {1} -Set -Passthru' -f $SendRequestParams.$StrDataObject.$StrServerPID, $StrMinimize|
 			Send-Request @SendRequestParams
 		$WindowInfo = $SendRequestParams.$StrDataObject.$StrResult
-	
+
 		$SendRequestParams.$StrDataObject = 'Write-Host -Object "{0}" -Foreground red' -f 'Hello World'|
 			Send-Request @SendRequestParams
 
@@ -149,27 +149,27 @@ Function Start-PipeTest
 		{ Write-Host "[Health1] PING/PONG OK - server process confirmed alive." -ForegroundColor Green }
 		Else
 		{ Write-Host "[Health1] PING/PONG FAILED - server may not be responding." -ForegroundColor Red }
-	
+
 		Get-PSCallStack
-	
+
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId ${0} -Passthru' -f 'pid'|
 			Send-Request @SendRequestParams
 		If ($ServerClientParams.$StrInfoDisplay -band 2)
 		{Show-VerboseData -Object $SendRequestParams.DataObject -Display -Title 'Data Object Set-Window call'}
-	
+
 		$SendRequestParams.$StrDataObject = 'Set-Window -ProcessId {0} -State {1} -Set -Passthru -characters' -f $SendRequestParams.$StrDataObject.$StrServerPID, $StrRestore|
 			Send-Request @SendRequestParams
 		#start-sleep -Seconds 5
 		#$SendRequestParams.DataObject = 'Get-MyDiskInfo -disknumber 0 '| Send-Request @SendRequestParams
 		#D:\PowerShellScripts\DisplayMyDisks\Display-MyDisks.ps1 -DiskInfo $SendRequestParams.DataObject.Result -sdisk
-	
+
 		#Start-Sleep -Seconds 5
-	
+
 		# Remove any defined breakpoints
 		#$SendRequestParams.$StrDataObject.data = $BPList
-		#$SendRequestParams.$StrDataObject = 'Remove-Breakpoints -BPObject $DataObject.data' |
+		#$SendRequestParams.$StrDataObject = 'Remove-Breakpoint -BPObject $DataObject.data' |
 		#Send-Request @SendRequestParams
-	
+
 	}
 
 	#############################
@@ -178,11 +178,11 @@ Function Start-PipeTest
 	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
 	$Global:Error.Clear()
 
-	('Module version is {0}' -f $ModuleVersion) | Write-Host 
+	('Module version is {0}' -f $ModuleVersion) | Write-Host
 
 	#$BPList.'Get-SBResult'.lines.Script=$BPList.'Get-SBResult'.Fullname
-	#$BPList.'Set-Breakpoints'.lines.line=17
-	#$BPList.'Set-Breakpoints'.lines.Script=$BPList.'Set-Breakpoints'.Fullname
+	#$BPList.'Set-Breakpoint'.lines.line=17
+	#$BPList.'Set-Breakpoint'.lines.Script=$BPList.'Set-Breakpoint'.Fullname
 	#Set-PSBreakpoint -Line 12 -Script $BPlist.'Get-SBResult'.Fullname
 	#$BPList = Initialize-BPList -AddModules
 
@@ -192,12 +192,12 @@ Function Start-PipeTest
 	#$BPList.'Send-Request'.lines.Line=32
 	#$BPList.'Send-Request'.lines.Script=$BPList.'Send-Request'.Fullname
 
-	#$BPList.'Set-Breakpoints'.lines.line=17
-	#$BPList.'Set-Breakpoints'.lines.Script=$BPList.'Set-Breakpoints'.Fullname
+	#$BPList.'Set-Breakpoint'.lines.line=17
+	#$BPList.'Set-Breakpoint'.lines.Script=$BPList.'Set-Breakpoint'.Fullname
 
-	#$BPList = Set-Breakpoints -BPObject $BPList
-	#$BPList = Remove-Breakpoints -BPObject $BPList
-	$Private:MyOptions = Set-ObjectParams -Dataset $StrMyOptions -MyParameters $Private:MyBoundParameters
+	#$BPList = Set-Breakpoint -BPObject $BPList
+	#$BPList = Remove-Breakpoint -BPObject $BPList
+	$Private:MyOptions = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Private:MyBoundParameters
 	# These options can be set to enable various options but can also be part of a script's parameters at startup
 	#$MyOptions.$StrInfoDisplay = $InfoDisplay # Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug output, 8=keep clean-run log (combine: 3=1+2, 15=all)
 	#$MyOptions.$StrNoExitOnError = $NoExitOnError # The powershell window will not close when an error has occured
@@ -208,7 +208,7 @@ Function Start-PipeTest
 	$Private:MyOptions.$StrWindowStyle = $StrNormal
 	#$MyOptions.$StrChunkSize = $ChunkSize # Chunk size for large data transfers (32KB default, 0 = no chunking)
 	#$MyOptions.$StrDepth = $Depth # Serialization depth (default 2, avoid >10 for ACL objects)
-	#$MyOptions.$StrServerWaitTimeout = $ServerWaitTimeout 
+	#$MyOptions.$StrServerWaitTimeout = $ServerWaitTimeout
 	#$MyOptions.$StrClientConnectTimeout=$ClientConnectTimeout
 
 	# The serverClientParams dataset is populated with MyOptions as this dataset already contains any script supplied parameters
@@ -229,7 +229,7 @@ Function Start-PipeTest
 	{ Write-Host "[Health] PING/PONG FAILED - server may not be responding." -ForegroundColor Red }
 
 	Get-PSCallStack
-	
+
 	Invoke-RequiredActions
 
 	# ===== POST-ACTION HEALTH CHECK =====
@@ -246,5 +246,5 @@ Function Start-PipeTest
 
 }
 Get-PSBreakpoint
-# Remove-Breakpoints -All
+# Remove-Breakpoint -All
 Start-PipeTest
