@@ -89,37 +89,6 @@ function Invoke-RequiredActions
 
 	$SendRequestParams.$StrType = $StrScriptBlock
 
-	#Remove-Breakpoint -All
-	#$BPList = Initialize-BPList -AddModules
-
-	#$BPList.'Start-PipeServerorClient'.lines.line = 140
-	#$BPList.'Start-PipeServerorClient'.lines.Script = $BPList.'Start-PipeServerorClient'.Fullname
-	#$BPList.'Receive-Data'.lines.line = 22
-	#$BPList.'Receive-Data'.lines.Script = $BPList.'Receive-Data'.Fullname
-	#$BPList.'Get-SBResult'.lines.line=30
-	#$BPList.'Get-SBResult'.lines.Script=$BPList.'Get-SBResult'.Fullname
-
-	# Set any defined breakpoints
-	#$SendRequestParams.$StrDataObject.$StrData = $BPList
-	#$SendRequestParams.$StrDataObject = 'Set-Breakpoint -BPObject $DataObject.data' |
-	#Send-Request @SendRequestParams
-	#$BPList = $SendRequestParams.$StrDataObject.$StrResult
-
-	#$BPList = Initialize-BPList -AddModules
-	#$BPList.'Get-SBResult'.lines.line=12
-	#$BPList.'Get-SBResult'.lines.Script=$BPList.'Get-SBResult'.Fullname
-	#$BPList.'Show-VerboseData'.lines.line = 106
-	#$BPList.'Show-VerboseData'.lines.Script = $BPList.'Show-VerboseData'.Fullname
-
-	#$SendRequestParams.$StrDataObject.$StrData = $BPList
-	#$SendRequestParams.$StrDataObject = 'Set-Breakpoint -BPObject $DataObject.data' |
-	#Send-Request @SendRequestParams
-	#$BPList = $SendRequestParams.$StrDataObject.$StrResult
-
-	#$SendRequestParams.$StrDataObject.$Strdata = $BPList
-	#$SendRequestParams.$StrDataObject = 'Set-Breakpoint -BPObject $DataObject.data' |
-	#Send-Request @SendRequestParams
-
 	$SWParam =@{
 		Passthru =$true
 		Set = $True
@@ -266,11 +235,6 @@ function Invoke-RequiredActions
 
 	#Start-Sleep -Seconds 5
 
-	# Remove any defined breakpoints
-	#$SendRequestParams.$StrDataObject.data = $BPList
-	#$SendRequestParams.$StrDataObject = 'Remove-Breakpoint -BPObject $DataObject.data' |
-	#Send-Request @SendRequestParams
-
 }
 
 #############################
@@ -281,23 +245,6 @@ $Global:Error.Clear()
 
 ('Module version is {0}' -f $ModuleVersion) | Write-Host
 
-#$BPList.'Get-SBResult'.lines.Script=$BPList.'Get-SBResult'.Fullname
-#$BPList.'Set-Breakpoint'.lines.line=17
-#$BPList.'Set-Breakpoint'.lines.Script=$BPList.'Set-Breakpoint'.Fullname
-#Set-PSBreakpoint -Line 12 -Script $BPlist.'Get-SBResult'.Fullname
-#$BPList = Initialize-BPList -AddModules
-
-#$BPList.'Start-PipeTest'.lines.Line=145
-#$BPList.'Start-PipeTest'.lines.Script=$BPList.'Start-PipeTest'.Fullname
-
-#$BPList.'Send-Request'.lines.Line=32
-#$BPList.'Send-Request'.lines.Script=$BPList.'Send-Request'.Fullname
-
-#$BPList.'Set-Breakpoint'.lines.line=17
-#$BPList.'Set-Breakpoint'.lines.Script=$BPList.'Set-Breakpoint'.Fullname
-
-#$BPList = Set-Breakpoint -BPObject $BPList
-#$BPList = Remove-Breakpoint -BPObject $BPList
 $Private:MyOptions = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Private:MyBoundParameters
 # These options can be set to enable various options but can also be part of a script's parameters at startup
 #$MyOptions.$StrInfoDisplay = $InfoDisplay # Bitmask: 0=silent, 1=server/client progress, 2=Show-VerboseData, 4=debug output, 8=keep clean-run log (combine: 3=1+2, 15=all)
@@ -329,7 +276,6 @@ if ($DemoPolicy)
 $Session = Start-PipeSession -MyParameters $Private:MyOptions -Options $Private:SessionOptions
 $ServerClientParams = $Session.$StrServerClientParams
 $SendRequestParams  = $Session.$StrSendRequestParams
-
 
 # ===== HEALTH PIPE CHECK =====
 
@@ -382,8 +328,6 @@ try {
 
 Invoke-RequiredActions
 
-
-
 # ===== POST-ACTION HEALTH CHECK =====
 
 Write-Host "`n[Health] Post-action health check..." -ForegroundColor Cyan
@@ -399,5 +343,3 @@ Show-VerboseData -Object $SendRequestParams.PipeInfo -Display -Title 'PipeName'
 
 Stop-PipeSession -SendRequestParams $SendRequestParams -PipeInfo $ServerClientParams.$StrPipeInfo
 
-Get-PSBreakpoint
-# Remove-Breakpoint -All

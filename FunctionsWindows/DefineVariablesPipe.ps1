@@ -200,18 +200,6 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Used in NamedPipe module'
 		}
-		StrBreakpoint         = @{
-			Value  = 'BreakPoint'
-			Scope  = $VSScript
-			Option = $VONone
-			Use    = 'Used in NamedPipe module'
-		}
-		StrBreakPointID       = @{
-			Value  = 'BreakPointId'
-			Scope  = $VSScript
-			Option = $VONone
-			Use    = 'Used in NamedPipe module'
-		}
 		StrInfoDisplay        = @{
 			Value  = 'InfoDisplay'
 			Scope  = $VSScript

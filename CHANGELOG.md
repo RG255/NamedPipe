@@ -60,6 +60,17 @@ coverage for `RedactPotentialSecrets`, when a test built the natural way (mirror
 with defaults matching what the Server/Client case already falls back to, so all four now round-trip
 through `MyOptions` identically regardless of which of the two supported paths a caller uses.
 
+### Removed (2026-09-20) - leftovers of the retired breakpoint-list facility
+
+The breakpoint functions were removed earlier (see the 2026-09-17 cleanup below); this removes what they
+left behind. Nothing in this repo used any of it:
+
+- The `'BreakPoint'` dataset of `Set-ObjectParameterSet` (its `-Dataset` validate-set entry, validate-script
+  clause and `Switch` case, which read a `$BPList` that no longer exists).
+- The `$StrBreakpoint` and `$StrBreakPointID` module variables.
+- Commented-out `Initialize-BPList` / `Set-Breakpoint` / `Remove-Breakpoint` calls in the `Tests\Start-PipeTest*.ps1`
+  scripts, and the stray `Get-PSBreakpoint` call at their end.
+
 ### Function-trace facility (vendored from CommonScripts, 2026-09-20)
 
 - `Enable-MyFunctionTrace`: `-Option` is now **mandatory** and validated 1-3 (it used to default to 1 and

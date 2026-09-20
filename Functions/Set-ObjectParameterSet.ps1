@@ -32,15 +32,14 @@
 		[Parameter(Mandatory,ParameterSetName = 'Server',HelpMessage = 'Please state the dataset to initialise')]
 		[Parameter(Mandatory,ParameterSetName = 'Client',HelpMessage = 'Please state the dataset to initialise')]
 		[Parameter(Mandatory,ParameterSetName = 'Either',HelpMessage = 'Please state the dataset to initialise')]
-		[validateset('PipeParams', 'DataObject','ServerClientParams','SendRequestParams','PipeInfo','MyOptions','BreakPoint')]
+		[validateset('PipeParams', 'DataObject','ServerClientParams','SendRequestParams','PipeInfo','MyOptions')]
 		[validatescript({
 				$_ -imatch $StrPipeParams -or
 				$_ -imatch $StrDataObject -or
 				$_ -imatch $StrMyOptions -or
 				$_ -imatch $StrServerClientParams -or
 				$_ -imatch $StrSendRequestParams -or
-				$_ -imatch $StrPipeInfo -or
-				$_ -imatch $StrBreakpoint
+				$_ -imatch $StrPipeInfo
 			})]
 		[String]$Dataset,
 		[Parameter(ParameterSetName = 'Server')]
@@ -68,21 +67,6 @@
 
 		Switch ($Dataset)
 		{
-			$StrBreakpoint
-			{
-				[Ordered] @{
-					BPInfo   = If ($BPList)
-					{$BPList}
-					Else
-					{@{}}
-					FullName = $Null
-					IDNoList = @()
-					Name     = $Null
-					Lines    = @{}
-					Command  = @{}
-					Variable = @{}
-				}
-			}
 			$StrPipeParams
 			{
 				[Ordered]@{
