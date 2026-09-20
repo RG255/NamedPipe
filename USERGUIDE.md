@@ -60,9 +60,8 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 
 ### What's New in v0.10 (injection hardening - BUILT, TESTED, DEPLOYED)
 
-See `_PlanningDocs\NamedPipe\0.13\PIPE-INJECTION-HARDENING-PLAN.md` for the full plan and its current
-status. The mechanism below is complete and has shipped in every version since 0.10 (current live
-version is 0.14 - every real consumer is on the hardened transport line). It remains fully **opt-in per
+The mechanism below is complete and has shipped in every version since 0.10 (every version since is on
+the hardened transport line). It remains fully **opt-in per
 session**: as of 2026-08-14 no consumer has actually set `RequestPolicy`, so behaviour is IDENTICAL to
 0.9 for everyone today unless you opt in to the option below yourself. (The planning doc's Section 9
 records why adoption is not currently recommended for any consumer here - the request policy itself

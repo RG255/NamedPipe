@@ -330,7 +330,7 @@ try
 	$Exclude = @('Define-CustomXML|DefineVariables|{0}$' -f $StrExtZip)
 	# Process all common functions
 	$MyPath = (Join-Path -Path $ModuleScriptRoot -ChildPath ('Functions\*{0}' -f $StrExtPS1) -ErrorAction Stop)
-	# Vendored CommonScripts copies (see Shared-Usage.psd1) sit in their own 'vendored' subfolder
+	# Vendored shared-utility copies sit in their own 'vendored' subfolder
 	# (changed 2026-09-13) for filesystem visibility - unioned in here.
 	$MyVendoredPath = (Join-Path -Path $ModuleScriptRoot -ChildPath ('Functions\vendored\*{0}' -f $StrExtPS1))
 	# Get a list of *.ps1 files that should contain a function of the same name

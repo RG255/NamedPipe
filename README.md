@@ -21,11 +21,15 @@ for each operation.
 
 ## Installation
 
-Deploy with the repo's standard deployment script (installs to the admin-only, AllUsers
-Program Files module path):
+Clone or copy this repository into a folder named after the version, inside a module folder on your
+`$env:PSModulePath`. For an all-users install (admin rights needed, and a location only administrators can
+write to, which matters because this module can start elevated processes):
 
 ```powershell
-powershell.exe -NoProfile -File "D:\PowerShellScripts\Modules\Deploy-Modules.ps1" -Module NamedPipe -Version 0.14
+# PowerShell 7
+git clone https://github.com/RG255/NamedPipe "C:\Program Files\PowerShell\Modules\NamedPipe\0.15"
+# Windows PowerShell 5.1
+git clone https://github.com/RG255/NamedPipe "C:\Program Files\WindowsPowerShell\Modules\NamedPipe\0.15"
 ```
 
 Then import:

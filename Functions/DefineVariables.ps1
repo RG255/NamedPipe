@@ -163,7 +163,7 @@ $script:FunctionExportTable = @{
 	'Start-PipeSession'        = $true
 	'Test-PipeSession'         = $true
 	'Stop-PipeSession'         = $true
-	# Catch-audit vendoring (2026-09-09) - see Modules\Shared-Usage.psd1's EXCEPTION note. The other
+	# Catch-audit vendoring (2026-09-09). The other
 	# 4 default to $true (exported) by NOT being listed here, same as every other name above.
 	'Write-MyCatchAudit'       = $false   # internal - vendored, same treatment as Get-MyError
 	# Function-trace facility (2026-09-15) - Write-MyFunctionTrace/Get-MyFunctionTracePath/

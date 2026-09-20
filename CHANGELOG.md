@@ -87,7 +87,7 @@ replacement for using `.Data` correctly.
 ## Version 0.14 - 2026-09-12 (branched 2026-09-12)
 
 ### Breaking changes
-PSScriptAnalyzer cleanup pass (see the repo's `_PlanningDocs\_Repo\2026-09-12_PSSA-Cleanup-Plan.md`).
+PSScriptAnalyzer cleanup pass.
 Zero external usage confirmed (public repo, 0 stars/forks/subscribers/releases) - hard renames, no
 back-compat aliases:
 
@@ -113,22 +113,12 @@ back-compat aliases:
   `Get-ChildWindowHandles.ps1` and `Set-Window.ps1`/`Publish-SetWindowCode.ps1` are left untouched
   (frozen backstop) - the first attempt at this sync briefly broke 0.13 by pulling the master's
   updated `Set-Window.ps1` (which now calls the new name) into 0.13 without also renaming 0.13's own
-  `Get-ChildWindowHandles.ps1`; fixed by removing all three files from 0.13's tracked vendored set in
-  `Shared-Usage.psd1`.
-
-### Repo tooling fixed as a result of this branch
-`Tools\Test-ModuleVersionSelfReference.ps1` gained a 4th FUNCTIONAL self-reference shape:
-`Get-Module | Where-Object { $_.Version -eq '<old>' }`. Four test scripts in this branch used exactly
-that pattern to pin to the pre-rename NamedPipe instance - invisible to the checker's original three
-shapes (`Import-Module`/`-RequiredVersion`/`ModuleToLoad`), so it reported 0 functional findings while
-Pester actually failed 4 tests. Found by running the Pester suite, not the checker; the checker itself
-is now fixed so the next branch catches this class of bug directly.
+  `Get-ChildWindowHandles.ps1`; fixed by removing all three files from 0.13's vendored set.
 
 ### Not renamed (vendored, left as accepted debt)
 The nested `Set-WindowParameters` function (inside `Set-Window.ps1`) is also a `PSUseSingularNouns`
 hit, but renaming it would mean editing live logic inside a vendored file shared with VHDTools and
-InstalledInventory beyond the one already-updated call site - left as accepted debt, matching
-`CLAUDE.md`'s existing guidance for already-exported plural names.
+other modules beyond the one already-updated call site - left as accepted debt.
 
 ### Changes - out-of-band data channel + dead-weight cleanup (2026-09-17, in-place, no version bump)
 
