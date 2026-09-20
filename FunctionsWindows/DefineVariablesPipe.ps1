@@ -386,6 +386,12 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Hashtable with Option/Pattern/Command for [Server] Executing: display redaction'
 		}
+		StrRedactPotentialSecrets            = @{
+			Value  = 'RedactPotentialSecrets'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.15: gates Get-SBResult''s built-in base64 structural check (console echo + trace log). Default $true when unset - see USERGUIDE.md for the full reasoning. Distinct from RedactPattern''s bit-2/bit-4 consumer-supplied pattern/command, which stay independently opt-in.'
+		}
 		StrRequestPolicy                     = @{
 			Value  = 'RequestPolicy'
 			Scope  = $VSScript

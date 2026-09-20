@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-ChildWindowHandle.ps1 by Sync-SharedUtilities [SHA256 ADB0B50E64A92A3547C76205FEE85E69509611ED39EC0E06AB6203F8CB29C5D8] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-ChildWindowHandle.ps1 by Sync-SharedUtilities [SHA256 47E665B35A45AA4A58CA57ABB916BF5EF705DCA84730033588C6F312A68CC199] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Get-ChildWindowHandle
 {
 	<#
@@ -16,6 +16,11 @@ Function Get-ChildWindowHandle
 		[Parameter(Mandatory = $True)]
 		[System.IntPtr]$ParentHandle
 	)
+
+	# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
 
 	If (-not ('WindowHelper.EnumWindows' -as [type]))
 	{

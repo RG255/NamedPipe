@@ -33,5 +33,21 @@
 		[Parameter()]
 		[String]$PipeName = 'Pipe'
 	)
-	'{0}-{1}' -f $Local:PipeName, $((Get-Date).ToFileTime())
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
+	# 2026-09-15: wrapped even though this looks trivial - per the user's own stated principle, never
+	# assume the environment is correctly configured; re-thrown so callers keep current behavior, this
+	# only adds a trackable record if Get-Date/formatting ever genuinely fails.
+	Try
+	{
+		'{0}-{1}' -f $Local:PipeName, $((Get-Date).ToFileTime())
+	}
+	Catch
+	{
+		Write-MyCatchAudit -Source 'Get-NewPipeName: failed to build a pipe name' -ErrorRecord $_
+		# Only ever called while BUILDING a pipe name (Set-ObjectParameterSet's ServerClientParams
+		# setup), before any pipe exists - a throw here fails setup, it cannot collapse an
+		# already-established, actively-conversing pipe.
+		throw
+	}
 }

@@ -44,8 +44,7 @@
 		[PSObject]$PipeInfo,
 		[Int]$TimeoutMs = 2000
 	)
-	If ($Script:FTrace)
-	{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
 
 	# Phase 1: passive object check
 	try

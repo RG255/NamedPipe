@@ -21,12 +21,25 @@
 		[Parameter()]
 		[String]$PipeName
 	)
-	$Private:File = @(Get-PipeServerLog -PipeName $PipeName -Newest 1)
-	if ($Private:File.Count -eq 0)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
+	# 2026-09-15: wrapped - an interactive display convenience must never crash the caller (e.g. if the
+	# log file is locked or unreadable), but per the user's own stated principle it still must not fail
+	# silently either.
+	Try
 	{
-		Write-Host 'No NamedPipe server diagnostics log found.' -ForegroundColor Yellow
-		return
+		$Private:File = @(Get-PipeServerLog -PipeName $PipeName -Newest 1)
+		if ($Private:File.Count -eq 0)
+		{
+			Write-Host 'No NamedPipe server diagnostics log found.' -ForegroundColor Yellow
+			return
+		}
+		Write-Host ('=== {0} ===' -f $Private:File[0].Name) -ForegroundColor Cyan
+		Get-Content -Path $Private:File[0].FullName
 	}
-	Write-Host ('=== {0} ===' -f $Private:File[0].Name) -ForegroundColor Cyan
-	Get-Content -Path $Private:File[0].FullName
+	Catch
+	{
+		Write-MyCatchAudit -Source 'Show-PipeServerLog: failed to display the server diagnostics log' -ErrorRecord $_
+		Write-Host ('Could not display the server diagnostics log: {0}' -f $_.Exception.Message) -ForegroundColor Red
+	}
 }

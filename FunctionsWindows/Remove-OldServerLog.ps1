@@ -19,6 +19,8 @@
 		[Parameter(Mandatory, HelpMessage = 'Age threshold in days; 0 = keep forever')]
 		[int]$RetentionDays
 	)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	if ($RetentionDays -le 0) { return }   # 0 = keep forever
 	try
 	{

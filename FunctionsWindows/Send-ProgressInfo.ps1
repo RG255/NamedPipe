@@ -39,6 +39,8 @@
 			})]
 		[string]$Type
 	)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	$Private:dataObject = Set-ObjectParameterSet -MyParameters $PSCmdlet.MyInvocation.BoundParameters -Dataset DataObject
 	# Must tag this as a server-originated DataObject. Send-Data uses ServerPID -eq $PID
 	# to decide whether to wait for a response after writing. Without this, Send-Data
@@ -47,5 +49,21 @@
 	$Private:dataObject.$StrServerPID  = $PID
 	$Private:dataObject.$StrProgressInfo = $String
 	$Private:dataObject.$StrType = $Type
-	Send-Data -DataObject $Private:dataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+	# 2026-09-15: -ErrorAction Stop here was a no-op - Send-Data never throws, it catches its own
+	# failures internally and returns a DataObject with .Error set instead. That result was previously
+	# discarded (this function's own .OUTPUTS says "None"), so a failed progress send vanished
+	# silently. Now checked and audited - a lost progress ping is low-stakes, but per the user's own
+	# stated principle, an error must always be caught SOMEWHERE, even if only to make it trackable.
+	$Private:dataObject = Send-Data -DataObject $Private:dataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+	If ($Private:dataObject.$StrError)
+	{
+		Write-MyCatchAudit -Source 'Send-ProgressInfo: Send-Data reported an error sending a progress message - the progress update was not delivered' -ErrorRecord (
+			New-Object System.Management.Automation.ErrorRecord (
+				(New-Object System.Exception($Private:dataObject.$StrError)),
+				'SendProgressInfoFailed',
+				[System.Management.Automation.ErrorCategory]::WriteError,
+				$Private:dataObject
+			)
+		)
+	}
 }

@@ -50,6 +50,8 @@
 		$PipeInfo
 	)
 
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	If ($DataObject.$StrServerPID -eq $PID)
 	{
 		# This is executed for the server
@@ -119,8 +121,16 @@
 			{
 				$chunkNum++
 
-				# Serialize the chunk object (small, no need for sub-chunking)
-				$chunkLine = ConvertTo-Serial -Object $chunk -ChunkSize 0
+				# The chunk WRAPPER is scalars plus a Data string that is ALREADY Base64 text - putting it
+				# through ConvertTo-Serial's full PSSerializer/CliXml path (as before 2026-09-15) doubles
+				# the encoding cost of every chunk for no benefit, since none of these fields need CliXml's
+				# type fidelity. A plain 'JCHUNK:'-prefixed ConvertTo-Json is cheaper on both CPU and wire
+				# bytes; Receive-Data's matching change decodes by that prefix, falling back to the full
+				# ConvertFrom-Serial path for a genuinely non-chunked (unprefixed, raw Base64) line - see
+				# its own comment. The reassembled payload itself still round-trips through full
+				# PSSerializer fidelity once, after all chunks are back together - only the per-chunk
+				# TRANSPORT wrapper is now lightweight.
+				$chunkLine = 'JCHUNK:' + ($chunk | ConvertTo-Json -Compress)
 				$PipeInfo.$StrWriter.WriteLine($chunkLine)
 				$PipeInfo.$StrWriter.Flush()
 

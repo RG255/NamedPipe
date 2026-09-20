@@ -29,6 +29,8 @@
 		[Parameter()]
 		[String]$SourceName = 'NamedPipe'
 	)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	try
 	{
 		$Private:Exists = $false

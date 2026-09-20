@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-ProcessIdFromWindowHandle.ps1 by Sync-SharedUtilities [SHA256 D618C81A24C5F41C2F33C4EAB41DD28F5F6DE2DA388F00AB5698BF75C310BAC5] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-ProcessIdFromWindowHandle.ps1 by Sync-SharedUtilities [SHA256 CEEE38DB2FE00E6FDAA2FDEEA87C5C1787D0883265A8032EB3F9A2406CB821B1] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Get-ProcessIdFromWindowHandle
 {
 	<#
@@ -15,6 +15,13 @@ Function Get-ProcessIdFromWindowHandle
 		[Parameter(Mandatory = $True, ValueFromPipeline = $True)]
 		[IntPtr]$WindowHandle
 	)
+	Begin
+	{
+		# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+	}
 	Process
 	{
 		If (-not ('WindowHelper.WindowPid' -as [type]))

@@ -42,6 +42,8 @@
 		[Parameter(Mandatory,ValueFromPipeline,HelpMessage = 'Please supply the Username to be given access')]
 		[String[]]$AccessIdentifier
 	)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	<#
 			To add new access restrictions:
 			$ar  += [IO.Pipes.PipeAccessRule]::New("<UserName | Group>", 'ReadWrite', 'Allow')
@@ -93,7 +95,10 @@
 	}
 	Catch
 	{
-		# Error creating pipe security - throw to caller for handling
+		# Error creating pipe security - throw to caller for handling. Called from
+		# Start-PipeServerOrClient while BUILDING the NamedPipeServerStream(acl) itself, before the pipe
+		# exists at all - a throw here means the pipe never gets created, it cannot collapse one that is
+		# already established and serving requests.
 		throw
 	}
 	$PipeSecurity

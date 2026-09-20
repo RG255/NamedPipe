@@ -47,6 +47,8 @@
 		[Parameter(Mandatory, Position = 0, HelpMessage = 'Please supply the $PipeInfo object!')]
 		[PSObject]$PipeInfo
 	)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	if ($DataObject.Error)
 	{
 		'An error was returned from the server process:' | Write-Output

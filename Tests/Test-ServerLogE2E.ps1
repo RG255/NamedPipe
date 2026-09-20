@@ -15,7 +15,7 @@
 Param ()
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.14 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.15 -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case { param([string]$Label, [bool]$Cond)

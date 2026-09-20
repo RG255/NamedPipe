@@ -56,67 +56,79 @@
 		[String]$Title = $Null,
 		[Switch]$Display
 	)
-	If ($Display)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
+	# 2026-09-15: wrapped - a diagnostic display function must never crash whatever operation called it
+	# (Send-Data/Receive-Data/Get-SBResult all call this when verbose display is on), but per the user's
+	# own stated principle it still must not fail silently.
+	Try
 	{
-		$Private:Stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
-		If ($Title)
-		{$Private:Msg = '{1}{0}{3} {2}{0}{1}' -f $StrCrlf, ''.PadRight(40, '-'), $Title, $Private:Stamp}
-		Else
-		{$Private:Msg = '{1} {0}' -f ''.PadRight(40, '-'), $Private:Stamp}
-		Write-Information -InformationAction Continue -MessageData $Private:Msg
-	}
-	if ($Object.count -ne [int]0)
-	{
-		Switch -regex ($Object.gettype().name)
+		If ($Display)
 		{
-			'LineBreakPoint'
+			$Private:Stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+			If ($Title)
+			{$Private:Msg = '{1}{0}{3} {2}{0}{1}' -f $StrCrlf, ''.PadRight(40, '-'), $Title, $Private:Stamp}
+			Else
+			{$Private:Msg = '{1} {0}' -f ''.PadRight(40, '-'), $Private:Stamp}
+			Write-Information -InformationAction Continue -MessageData $Private:Msg
+		}
+		if ($Object.count -ne [int]0)
+		{
+			Switch -regex ($Object.gettype().name)
 			{
-				$Private:Msg = $Object |
-					Select-Object -Property * |
-					Out-String
-				Write-Information -InformationAction Continue -MessageData $Private:Msg.trim("`r`n")
-			}
-			'String|ScriptBlock'
-			{
-				$Private:Msg = $Object
-				Write-Information -InformationAction Continue -MessageData $Private:Msg
-			}
-			'PSCustomObject|OrderedDictionary'
-			{Write-Information -InformationAction Continue -MessageData ($Object|Out-String).trim("`r`n")}
-			'Collection*'
-			{
-				$Private:Msg = $Object | Out-String
-				Write-Information -InformationAction Continue -MessageData $Private:Msg
-			}
-			'Hashtable'
-			{
-				if ($KeySize -eq 0)
+				'LineBreakPoint'
 				{
-					foreach($Item in $Object.GetEnumerator())
-					{
-						If ($Item.Name.length -gt $KeySize)
-						{$KeySize = $Item.Name.length}
-					}
+					$Private:Msg = $Object |
+						Select-Object -Property * |
+						Out-String
+					Write-Information -InformationAction Continue -MessageData $Private:Msg.trim("`r`n")
 				}
-				If ($Display)
+				'String|ScriptBlock'
 				{
-					foreach($Item in $Object.GetEnumerator() | Sort-Object -Property key)
-					{
-						$Private:Msg = '{0} = {1}' -f $Item.key.PadRight($KeySize), $Item.value
-						Write-Information -InformationAction Continue -MessageData $Private:Msg
-					}
+					$Private:Msg = $Object
+					Write-Information -InformationAction Continue -MessageData $Private:Msg
 				}
-				Else
+				'PSCustomObject|OrderedDictionary'
+				{Write-Information -InformationAction Continue -MessageData ($Object|Out-String).trim("`r`n")}
+				'Collection*'
 				{
-					foreach($Item in $Object.GetEnumerator() | Sort-Object -Property key)
-					{'{0} = {1}' -f $Item.key.PadRight($KeySize), $Item.value | Write-Verbose}
+					$Private:Msg = $Object | Out-String
+					Write-Information -InformationAction Continue -MessageData $Private:Msg
+				}
+				'Hashtable'
+				{
+					if ($KeySize -eq 0)
+					{
+						foreach($Item in $Object.GetEnumerator())
+						{
+							If ($Item.Name.length -gt $KeySize)
+							{$KeySize = $Item.Name.length}
+						}
+					}
+					If ($Display)
+					{
+						foreach($Item in $Object.GetEnumerator() | Sort-Object -Property key)
+						{
+							$Private:Msg = '{0} = {1}' -f $Item.key.PadRight($KeySize), $Item.value
+							Write-Information -InformationAction Continue -MessageData $Private:Msg
+						}
+					}
+					Else
+					{
+						foreach($Item in $Object.GetEnumerator() | Sort-Object -Property key)
+						{'{0} = {1}' -f $Item.key.PadRight($KeySize), $Item.value | Write-Verbose}
+					}
 				}
 			}
 		}
+		Else
+		{
+			$Private:Msg = 'The item has no content'
+			Write-Information -InformationAction Continue -MessageData $Private:Msg
+		}
 	}
-	Else
+	Catch
 	{
-		$Private:Msg = 'The item has no content'
-		Write-Information -InformationAction Continue -MessageData $Private:Msg
+		Write-MyCatchAudit -Source 'Show-VerboseData: failed to format/display the object' -ErrorRecord $_
 	}
 }

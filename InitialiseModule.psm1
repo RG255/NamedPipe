@@ -34,7 +34,7 @@
 		to use while it is running.
 
 		Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-		Import-Module NamedPipe -RequiredVersion 0.14
+		Import-Module NamedPipe -RequiredVersion 0.15
 
 		Where -RequiredVersion 0.14 is the version of the module to use, there can be multiple
 		versions of the same module as its functionality is improved or expanded.
@@ -310,6 +310,9 @@ catch
 	$Global:Error[$ErrorNumber].InvocationInfo.PSCommandPath, 
 	$Global:Error[$ErrorNumber].InvocationInfo.ScriptLineNumber, 
 	($Global:Error[$ErrorNumber].InvocationInfo.Line).Trim() | Write-Warning
+	# Module IMPORT time (reading the manifest) - runs before the module has even finished loading, let
+	# alone before any pipe exists. A throw here fails Import-Module itself; there is no pipe to
+	# collapse.
 	throw 'Unable to retrieve required data from: [{0}]' -f $PSD1Path
 }
 try
@@ -508,6 +511,9 @@ Catch
 	$Global:Error[$ErrorNumber].InvocationInfo.PSCommandPath, 
 	$Global:Error[$ErrorNumber].InvocationInfo.ScriptLineNumber, 
 	($Global:Error[$ErrorNumber].InvocationInfo.Line).Trim() | Write-Warning
+	# Module IMPORT time - same reasoning as the earlier throw in this file: runs before the module has
+	# finished loading, let alone before any pipe exists. A throw here fails Import-Module itself;
+	# there is no pipe to collapse.
 	throw 'Unable to initialise module: {0}' -f $ModuleName
 }
 

@@ -1,5 +1,89 @@
 # NamedPipe Changelog
 
+## Version 0.15 - 2026-09-19 (branched 2026-09-19)
+
+### Changed - deliberate behavior change, not silent
+
+`Get-SBResult.ps1`'s built-in (`RedactPattern` bit 1) redaction of the `[Server] Executing:` console
+echo / persistent function-trace log was replaced with a real structural base64 check, gated behind a
+new option, `RedactPotentialSecrets` (default `$true`). A matched value now displays as
+`<base64 encoded>` instead of `<redacted>`.
+
+**Why**: the previous version was an unconditional regex ("any 40+ character run of
+`[A-Za-z0-9+/=]`") that could not distinguish a real secret from a coincidentally long/base64-shaped
+non-secret value, and it missed short secrets entirely. Found via live trace-log auditing during a
+VHDTools mount operation.
+
+**What changed, precisely**:
+- Bit 1 is no longer unconditional - it now runs only when `RedactPotentialSecrets` is `$true`
+  (the default, so existing consumers see no config-side change).
+- The check itself is now real: each QUOTED VALUE in the request text is tested as a whole for
+  structural base64 validity (new exported function `Test-Base64String.ps1`: length-modulo-4, then a
+  real `[Convert]::FromBase64String` decode), rather than a blind character-count regex.
+- The masked label changed from `<redacted>` to `<base64 encoded>` - more honest about what was
+  actually detected (a base64-shaped value), since this check can never confirm actual sensitivity.
+
+**A real implementation mistake was made and corrected in the same development pass, worth recording
+here rather than glossing over**: the first version of the new check matched maximal RUNS of
+base64-alphabet characters anywhere in the text instead of whole quoted values. This fragmented at
+every non-base64 character (`\`, `:`, `-`, `.`, `$`), so an entirely ordinary, non-secret quoted path
+like `'W:\vhd\PSimple\tvhd-p.psd1'` lost several short fragments (`tvhd`, `psd1`, `vhdx`) to false
+positives, along with a 20-character parameter name (`CheckGroupMembership`) and this module's own
+`-Data:$Data` marker text - six false positives in one realistic command line. Caught by a real
+Pester test failure (not by review), and fixed by testing whole quoted values instead, since a real
+secret in this codebase's request text is always an entire quoted string value
+(`ConvertTo-ParameterSet` quotes every string parameter) - nothing legitimate needs to be pulled
+apart to find something hidden inside it. See `USERGUIDE.md`'s `RedactPotentialSecrets` section for
+the full explanation, including what this check does and does not catch.
+
+### Added
+
+- `Test-Base64String` (exported) - structural base64 validity test, usable standalone.
+- `Examples\06-RedactPotentialSecrets-QuotedValues.ps1` - demonstrates the false-positive bug and its
+  fix, the "potential not confirmed" distinction, and turning `RedactPotentialSecrets` off.
+- New Pester coverage for this area (previously untested): `Test-Base64String`,
+  `Get-SBResult - RedactPotentialSecrets display transform`, and
+  `Get-SBResult - RedactPotentialSecrets end-to-end gating` Describe blocks in `NamedPipe.Tests.ps1`,
+  the last of which calls the real `Get-SBResult`/`Set-ObjectParameterSet` (not a re-implementation)
+  and intercepts the real console-echo call via `Mock Send-ProgressInfo`.
+
+### Fixed
+
+`Set-ObjectParameterSet.ps1`'s `$StrMyOptions` dataset case silently dropped four options -
+`RedactPotentialSecrets`, `RedactPattern`, `RequestPolicy`, `ModuleToLoad` - when a caller passed them
+via raw `-MyParameters` straight into that dataset call, since that case's own switch never listed
+them (only `InfoDisplay`/`Depth`/`ChunkSize`/timeouts round-tripped that way). All four were still
+reachable via `Start-PipeSession`'s `-Options` merge (its documented mechanism, and the only path any
+real consumer uses), so nothing shipped was actually broken - found while adding end-to-end Pester
+coverage for `RedactPotentialSecrets`, when a test built the natural way (mirroring the sibling
+`InfoDisplay`/`Depth` tests) failed. Fixed by adding the same four fields to the `$StrMyOptions` case,
+with defaults matching what the Server/Client case already falls back to, so all four now round-trip
+through `MyOptions` identically regardless of which of the two supported paths a caller uses.
+
+### Function-trace facility (vendored from CommonScripts, 2026-09-20)
+
+- `Enable-MyFunctionTrace`: `-Option` is now **mandatory** and validated 1-3 (it used to default to 1 and
+  accept 0). Prints the single confirmation line `Function-call tracing is ON (Option=N) ... Log: <path>`.
+  New `-NewSession` switch.
+- **One trace file per window.** `Enable-MyFunctionTrace` creates a session id and `Get-MyFunctionTracePath`
+  returns `FunctionTrace-Session-<Id>.log` (id sanitised to `[A-Za-z0-9_-]`), so windows tracing at once do
+  not interleave; a client and its own elevated server share the file through the id. No session id = the
+  shared `FunctionTrace.log` as before. `Clear-MyFunctionTraceLog` keeps the id in the archive name;
+  `Clear-MyFunctionTraceArchive` also prunes old session files (age rule only).
+- `Write-MyFunctionTrace`: the hardcoded `-Detail` caller allowlist (which named NamedPipe's `Get-SBResult`
+  in every module's copy of this file) is **removed** - `-Detail` is appended for any caller, which owns its
+  own guard and content. New generic `-SkipFrames` lets a thin wrapper attribute the line to its caller.
+  `Get-SBResult` is unchanged.
+- Known gap, deliberately deferred: the trace folder has no explicit ACL (see USERGUIDE "Function tracing").
+
+### Unaffected
+
+`RedactPattern` bits 2 (consumer regex) and 4 (consumer command) are unchanged - already opt-in via
+`RedactPattern.Option`, independent of `RedactPotentialSecrets`. `DataObject.Data` (the out-of-band
+channel) is unaffected and remains the real structural protection for a value a consumer knows is
+sensitive - `RedactPotentialSecrets` is a backstop/noise-reducer for everything else, not a
+replacement for using `.Data` correctly.
+
 ## Version 0.14 - 2026-09-12 (branched 2026-09-12)
 
 ### Breaking changes
@@ -45,6 +129,55 @@ The nested `Set-WindowParameters` function (inside `Set-Window.ps1`) is also a `
 hit, but renaming it would mean editing live logic inside a vendored file shared with VHDTools and
 InstalledInventory beyond the one already-updated call site - left as accepted debt, matching
 `CLAUDE.md`'s existing guidance for already-exported plural names.
+
+### Changes - out-of-band data channel + dead-weight cleanup (2026-09-17, in-place, no version bump)
+
+Landed in place rather than as a new version branch: purely additive (gated entirely behind
+`DataObject.Data` being populated, which no existing caller does today) and a removal of confirmed
+dead code, so nothing in this entry changes behaviour for any existing caller.
+
+- **`Get-SBResult.ps1`**: when `DataObject.Data` is populated, its value is now closure-injected so
+  it never has to be embedded as a literal anywhere in the generated command text. Motivated by a
+  trace-log review finding that every request value - including anything a consumer passes, secrets
+  or otherwise - was ending up in the literal scriptblock source, visible via the console echo, the
+  trace log's `Detail:` line, and a pre-existing, unredacted `Show-VerboseData` dump of the full
+  request. `Get-SBResult` has no opinion about what `.Data` holds, why a consumer wants it out-of-band,
+  or whether the request is a single command or a whole multi-statement script - it works identically
+  for credential material, a large/verbose value (e.g. a whole config file), or any other value a
+  consumer doesn't want appearing in that text. Whether `-Data:$Data` is ALSO appended to `Request`'s
+  own text (so a named function can receive it as an ordinary bound `-Data` parameter, including a
+  Mandatory one) is decided by the SHAPE of the request, not by whether `.Parameters` happens to be
+  set:
+  - **`DataObject.Parameters` set, OR `Request` is a single line** (a bare command or pipeline):
+    appended automatically.
+  - **`Request` spans multiple lines** (a genuine multi-statement script body - assignments, an `If`
+    block, several calls): never appended - appending would corrupt whatever the LAST line happens to
+    be. The closure alone already makes `$Data`/`$Data.<Key>` resolvable via a bare reference anywhere
+    in that body, so the consumer just writes it directly wherever needed. VaultTools' BitLocker
+    command templates (`Unlock-VaultBitLockerDevice.ps1` and others) are the real example of this
+    shape found this session; an earlier revision of this fix used `.Parameters`' presence alone as
+    the signal instead of request shape, which wrongly left a bare single-line command with no other
+    parameters (e.g. one whose own `-Data` parameter is Mandatory) with nothing appended - corrected
+    before this landed.
+
+  Neither shape is preferred by NamedPipe itself - a consumer with its own reasons for a compound
+  multi-statement request is exactly as well supported as one that prefers one-action-per-round-trip
+  dispatch (VHDTools/VaultTools' own convention, adopted for their own reasons - VHDTools' original
+  `ChangePassword` flow was in fact rewritten FROM a multi-statement scriptblock INTO three separate
+  atomic `Invoke-VHDAction` round trips for exactly this reason - not because NamedPipe requires or
+  nudges toward either shape).
+  See the `DataObject` section of `USERGUIDE.md`.
+- **Removed dead code, confirmed via full-repo grep with zero references anywhere, in NamedPipe or
+  any consumer**:
+  - `$StrExtVHDX`/`$StrExtVHD`/`$StrExtVSSLOG` (`Functions\DefineVariables.ps1`) - VHD/backup-domain
+    constants that had no business in a generic transport module's shared variable table; VHDTools
+    already carries its own independent copies.
+  - `Initialize-BPList`/`Set-Breakpoint`/`Remove-Breakpoint` (`FunctionsWindows\`) - a dynamic
+    breakpoint-list facility built when debugging the elevated, separate-process server side used to
+    be hard. Every remaining invocation anywhere in the repo (including this module's own tests) was
+    commented-out scaffolding. Replaced by documenting PowerShell's own built-in
+    `Enter-PSHostProcess`/`Debug-Runspace` remote debugging (needs no code here at all - the server's
+    PID is already exposed via `ServerPID`) - see "Debugging the server side" in `USERGUIDE.md`.
 
 ## Version 0.13 - 2026-08-13 (branched 2026-08-11)
 

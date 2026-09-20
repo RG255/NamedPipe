@@ -12,7 +12,7 @@
 [CmdletBinding()]
 Param ()
 Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module NamedPipe -RequiredVersion 0.14 -Force -ErrorAction Stop
+Import-Module NamedPipe -RequiredVersion 0.15 -Force -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case { param([string]$L, [bool]$C) if ($C) { Write-Host "[PASS] $L" -ForegroundColor Green } else { Write-Host "[FAIL] $L" -ForegroundColor Red; $Script:Pass = $false } }

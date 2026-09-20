@@ -29,8 +29,7 @@
 		[Parameter(Mandatory)]
 		[PSObject]$PipeInfo
 	)
-	If ($Script:FTrace)
-	{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
 
 	try
 	{

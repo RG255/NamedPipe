@@ -52,6 +52,8 @@
 		[String]$Level = 'Medium'
 	)
 
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	# Compile the SetSecurityInfo P/Invoke once per process (guarded by type name so a module reload,
 	# which cannot unload the type, does not re-add it).
 	If (-not ('NamedPipe.MandatoryLabel' -as [Type]))

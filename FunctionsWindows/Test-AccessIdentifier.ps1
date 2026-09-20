@@ -18,6 +18,11 @@
 		Used internally by Set-ObjectParameterSet to validate AccessIdentifier entries
 		before they are passed to Set-PipeSecurity.
 
+		All of this function's throws (below) happen during that same SERVER SETUP step, building
+		ServerClientParams/Set-PipeSecurity's input before the pipe is created - not during a live
+		request cycle. A throw here fails setup; it cannot collapse an already-established, actively-
+		conversing pipe, since none exists yet at this point.
+
 		.PARAMETER IDList
 		Access identifier strings to validate. Accepts pipeline input.
 		Format: 'Identity:AllowOrDeny:AccessRight'
@@ -43,6 +48,10 @@
 		[Parameter(Mandatory,ValueFromPipeline,Dontshow = $True)]
 		[String[]]$IDList
 	)
+	Begin
+	{
+		If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+	}
 	Process
 	{
 		$ID = $IDList -split ':'

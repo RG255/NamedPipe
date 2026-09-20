@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Publish-SetWindowCode.ps1 by Sync-SharedUtilities [SHA256 E61FD13B31BA70887972AE82BB95B7BE867C93167DD49D8F8CD43418FD97346D] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Publish-SetWindowCode.ps1 by Sync-SharedUtilities [SHA256 AD201502B47B36E27870185D9CB5717B94A9AD1C7F6D249459B47373C1A7C738] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Publish-SetWindowCode
 {
 	<#
@@ -19,6 +19,11 @@ Function Publish-SetWindowCode
 		no longer declared here.
 		Required by: Set-Window.ps1
 	#>
+
+	# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
 
 	try
 	{

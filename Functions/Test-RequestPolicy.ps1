@@ -66,8 +66,12 @@
 		[Hashtable]$Policy
 	)
 
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	# Nested: short single-line snippet of an AST node's source, for rejection messages, so a reason
-	# never dumps a whole multi-line request back to the caller.
+	# never dumps a whole multi-line request back to the caller. Deliberately NOT traced - called once
+	# per rejected AST node while walking the whole request (potentially many per call), same
+	# per-item/stream-processing helper exemption as DnsTools' Format-DnsRecord.
 	Function Get-RequestExtentSnippet
 	{
 		Param ($Node)

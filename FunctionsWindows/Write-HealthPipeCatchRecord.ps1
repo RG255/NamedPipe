@@ -52,6 +52,11 @@
 		[Switch]$Teardown
 	)
 
+	# Deliberately NOT traced (2026-09-15): this function is dot-sourced into a bare
+	# [RunspaceFactory]::CreateRunspace() runspace with NO module functions loaded into it (see
+	# .DESCRIPTION) - Write-MyFunctionTrace, like Write-MyCatchAudit, genuinely is not callable from
+	# there. Same permanent-exclusion category as the trace facility's own machinery.
+
 	# Must never throw - see .DESCRIPTION.
 	Try
 	{

@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Format-MyTextLine.ps1 by Sync-SharedUtilities [SHA256 ABCF1C4E50810EF258D9A5BFFBC32A7B8148C07019F6915755DBDDD8C471EC83] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Format-MyTextLine.ps1 by Sync-SharedUtilities [SHA256 3580AB288843663D31BD71D221462FFA4219CD97E9AE7142185EC33DDAC50096] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Format-MyTextLine
 {
 	<#
@@ -65,7 +65,30 @@ Function Format-MyTextLine
 		[switch]$NoWrap
 	)
 
+	# -and (Get-Command...) guard, added 2026-09-15: this file is vendored into nearly every module,
+	# including several (VHDTools, VaultTools, Macrium, InstalledInventory) that never vendor the trace
+	# facility itself. $env:MyFunctionTraceEnabled is process-scoped, so it can be '1' in any of their
+	# processes purely because an unrelated NamedPipe/DnsTools test session in the same shell turned it
+	# on - confirmed live as a real VHDTools mount-session crash ("'Write-MyFunctionTrace' is not
+	# recognized"). The env check alone doesn't prove the function exists; only Get-Command does.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+
+	# Whole-body wrap, added 2026-09-15 - same reasoning and same real incident as Get-MyError.ps1's own
+	# wrap (see that file's comment for the full story): this function is called directly from dozens of
+	# places across every module to build help/status text, not just through Get-MyError, and its word-
+	# wrap/Substring arithmetic below has no protection at all - a pathological width/label-length
+	# combination throwing here would propagate straight out of a "just format this line for display"
+	# call and could abort whatever caller was mid-cleanup, exactly like the original incident. On
+	# internal failure this falls back to an unwrapped, unpadded concatenation of the inputs rather than
+	# nothing - a plain-looking line still beats losing the text entirely.
+	Try
+	{
+
 	# ── Inner helper: find a safe line-break position ─────────────────────────
+	# Split-MyLine deliberately NOT traced - called once per wrapped line inside a single
+	# Format-MyTextLine call (up to many times for long help text), same per-item/stream-processing
+	# helper exemption as Resolve-DnsIterative's Format-DnsRecord - Format-MyTextLine's own trace stamp
+	# already establishes the call happened.
 	Function Split-MyLine
 	{
 		[CmdletBinding(PositionalBinding = $False)]
@@ -184,4 +207,14 @@ Function Format-MyTextLine
 
 	# Prepend any requested line-ending and return
 	('{0}{1}' -f $InitialLF, $TextOut)
+	}
+	Catch
+	{
+		Write-MyCatchAudit -Source 'Format-MyTextLine: internal failure formatting/wrapping a line' -ErrorRecord $_
+		# Best-effort fallback: an unwrapped, unpadded line still beats losing the text entirely. Routed
+		# through Write-MyCatchAudit too if even THIS fails (matches Get-MyError's own last-resort catch)
+		# rather than a silent swallow - see this function's own top-of-body note on why.
+		Try { ('{0}{1}{2}{3}' -f $InitialLF, $Parameter, $ParamTrail, $Text) }
+		Catch { Write-MyCatchAudit -Source 'Format-MyTextLine: even the fallback formatting failed' -ErrorRecord $_; '' }
+	}
 }

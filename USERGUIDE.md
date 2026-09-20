@@ -183,6 +183,20 @@ one process whose identity it has just confirmed.
 See **Session Hand-off** below for the full flow. Everything else is unchanged from v0.11, and consumers that
 do not use the hand-off are entirely unaffected.
 
+### What's New in v0.15 (RedactPotentialSecrets - what it actually is, and what it is not)
+
+See **RedactPotentialSecrets** below (under Session Options) for the full explanation - this section
+is the short version. Bit 1 of `RedactPattern` (built-in redaction) used to be an unconditional
+regex that stripped any 40+ character run of base64/hex-alphabet characters. It has been replaced
+with a real structural base64 check, gated behind a new option, `RedactPotentialSecrets` (default
+`$true`). A matched value now shows as `<base64 encoded>` instead of `<redacted>`.
+
+**Read the full section below before relying on this for anything security-relevant** - it explains
+a real design mistake made and caught while building this (an earlier version fragmented text at
+punctuation and flagged ordinary words like a 20-character parameter name), why the fix tests whole
+quoted values instead of loose fragments, and - most importantly - why this can only ever detect "is
+this shaped like base64," never "is this actually a secret."
+
 ## Architecture
 
 The module uses a client-server architecture over Windows Named Pipes:
@@ -605,6 +619,7 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 | `ServerWaitTimeout` | Int | 60 | Seconds the server waits for a client connection |
 | `ClientConnectTimeout` | Int | 10000 | Milliseconds the client waits to connect to the server |
 | `ChunkReadTimeout` (v0.13+) | Int | 30000 | Milliseconds Receive-Data waits for the NEXT chunk of an already-started chunked transfer. Does NOT apply to the first read of a message (waiting for a server-side operation to complete, or for the server's next request, has no timeout - both are normal, not stalls) - only to a gap AFTER a transfer has already begun, which means the sender broke mid-stream. |
+| `RedactPotentialSecrets` (v0.15+) | Bool | $True | Gates the built-in structural base64 check described below. See that section before changing this. |
 
 ### RedactPattern (v0.5+)
 
@@ -617,12 +632,104 @@ $PipeOptions['RedactPattern'] = @{ Option = 1 }   # built-in scrubbing only (rec
 
 | `Option` bit | Behaviour |
 |---|---|
-| 1 | Built-in: redacts any 40+ character run of `[A-Za-z0-9+/=]` (catches AES transport keys and SecureString hex) |
+| 1 | Built-in: tests each QUOTED VALUE in the request text as a whole for structural base64 validity, gated by `RedactPotentialSecrets` - see the dedicated section below. Prior to v0.15 this was a blind regex ("any 40+ character run of `[A-Za-z0-9+/=]`"); that version is gone. |
 | 2 | Consumer regex: redacts matches of `Pattern` (a regex string) |
 | 4 | Consumer command: runs `Command` (a ScriptBlock) on each echo line |
 
 Bits combine additively (e.g. `3` = built-in + regex). Each step receives the output of the
 previous step. The VHD module defaults to `@{ Option = 1 }`.
+
+### RedactPotentialSecrets (v0.15+) - what this actually does, and what it does not
+
+**Read this whole section before relying on it for anything.** The name is deliberate:
+`RedactPotentialSecrets` says *potential*, not *confirmed* - and that distinction is the single most
+important thing to understand about this feature.
+
+#### What problem this solves
+
+Every request `Get-SBResult` executes gets built into literal PowerShell source text, and that text
+can appear in three places: the console echo (`InfoDisplay` bit 1), the persistent function-trace log
+(`Write-MyFunctionTrace -Detail`, tracing bit 2), and a raw `Show-VerboseData` dump (`InfoDisplay` bit
+2). NamedPipe's `DataObject.Data` out-of-band channel (see above) is the STRUCTURAL fix for secrets a
+consumer deliberately routes through it - those values are closure-injected and never become literal
+text at all, so there is nothing in any of the three paths above for this feature to even need to
+catch. `RedactPotentialSecrets` exists for everything else: a value that ends up in `-Parameters` (or
+directly in the request text) instead of `.Data`, whether by design, by a consumer that hasn't
+migrated yet, or by a future mistake in code that has.
+
+#### What it actually checks
+
+A request like:
+```
+Invoke-VHDAction -DestinationPath:'W:\vhd\PSimple\tvhd-p.psd1' -Data:'aGVsbG8gd29ybGQ='
+```
+gets scanned for every QUOTED STRING VALUE (`'...'` or `"..."`) and each one's content is tested, as
+a WHOLE, for structural base64 validity (`Test-Base64String`: length must be a multiple of 4, then a
+real `[Convert]::FromBase64String` decode). A value that passes gets replaced with
+`<base64 encoded>`. Everything else - the path, parameter names, `$True`/`$False`, a bare `$Data`
+reference - is left completely unchanged, because none of it is ever tested in isolation: only the
+full content between a matching pair of quotes is a candidate at all.
+
+#### A real mistake made building this, kept here deliberately as a warning
+
+The first version of this feature did NOT test whole quoted values - it matched maximal RUNS of
+base64-alphabet characters anywhere in the text, splitting automatically at any character outside
+that alphabet. This looked reasonable but was wrong, and it was caught by a real Pester test failure,
+not by review: a completely ordinary, non-secret path like `'W:\vhd\PSimple\tvhd-p.psd1'` contains no
+base64-invalid characters within some of its own pieces once you fragment it at `\`, `:`, `-`, and
+`.` - so `tvhd`, `psd1`, and `vhdx` each got tested ALONE, and each one happens to be 4 characters of
+pure base64-alphabet content, which decodes without error every time (any 4-character string drawn
+from the base64 alphabet decodes to 3 bytes - the decode step adds essentially no filtering beyond
+the length/charset check for a candidate with no `=` padding). One realistic command line lost SIX
+separate words to this, including a 20-character parameter name (`CheckGroupMembership`) and this
+module's OWN `-Data:$Data` out-of-band marker text (`Data` is 4 letters). The fix - testing whole
+quoted values instead of fragments - closes this because a real secret in this codebase's request
+text is always an entire quoted string value (`ConvertTo-ParameterSet` quotes every string
+parameter); nothing legitimate ever needs to be pulled apart to find something hidden inside it.
+
+#### What it does NOT do, and never can
+
+This is a **structural** test, nothing more. It answers exactly one question - "is this a valid
+base64 string?" - and that question is not the same question as "is this actually sensitive?" Two
+consequences follow directly, and neither is a bug:
+
+- **It will mask non-secret data.** Any legitimately base64-encoded value that is quoted as a whole
+  (a config blob, a hash, a certificate thumbprint stored as base64) gets masked exactly like a real
+  password would. This is fine, and arguably a feature in its own right: a long base64 blob is
+  visually noisy and unhelpful to read in a console echo or a persistent trace log whether or not it
+  turns out to be sensitive, so masking it keeps the log readable either way. Do not read a
+  `<base64 encoded>` marker as proof that something sensitive was found - it only proves something
+  base64-shaped was found.
+- **It will miss real secrets that are not base64-encoded.** A short, human-typed passphrase, PIN, or
+  API key that is plain text (not base64) is invisible to this check entirely, no matter how
+  sensitive it is. See `03-Redaction-CustomPattern.ps1` for the actual fix for that case: a
+  consumer-supplied `RedactPattern.Pattern` matching your own parameter name (bit 2, above) - there is
+  no generic way to catch this, since NamedPipe has no way to know which of a consumer's own
+  parameter names carry secrets.
+
+**The real, structural protection for a value you know is sensitive remains `DataObject.Data`** (see
+above) - route it through there and it never becomes text in the first place, which is strictly
+better than any amount of pattern-matching after the fact. `RedactPotentialSecrets` is a backstop and
+a readability aid, not a substitute for using `.Data` correctly.
+
+#### Turning it off
+
+```powershell
+$PipeOptions['RedactPotentialSecrets'] = $false
+```
+
+This is an explicit, deliberate choice to see full, undisguised request text - e.g. to copy a masked
+value out and decode it elsewhere, or to confirm a masked value was never actually sensitive. **The
+consequence is concrete and immediate**: if a real secret is currently living in `-Parameters` (or
+directly in the request text) instead of being routed through `.Data`, turning this off means that
+secret WILL appear in plaintext, in both the console echo and the persistent, on-disk function-trace
+log, for as long as the option stays off. There is no partial or scoped version of turning it off -
+it is all-or-nothing for every request this session sends while it is set. Turn it back on (or restart
+the session) once you are done looking.
+
+See `Examples\06-RedactPotentialSecrets-QuotedValues.ps1` for a runnable demonstration of everything
+in this section: the false-positive bug and its fix, the "potential not confirmed" distinction in
+practice, and turning the option off to see a real value.
 
 ### Access Control
 
@@ -666,7 +773,22 @@ The communication payload. Contains:
 - `Type` - Request type (ScriptBlock, Security, ExitPipe)
 - `Request` - The command to execute
 - `Parameters` - Optional parameters for the command
-- `Data` - Optional data to pass with the request
+- `Data` - Optional out-of-band value(s) the request needs but that should never appear as a literal
+  in `Request`/`Parameters`' own text - credentials/keys, or simply a large value (a whole config
+  file) that would otherwise be dumped verbatim as one unreadable line in a console echo, the trace
+  log's `Detail:` line, or a raw scriptblock dump. `Get-SBResult` closure-injects it, so it never
+  inspects, decodes, or has any opinion about what `Data` holds, or about whether `Request` is a
+  single command or a whole multi-statement script. How you reference it depends on which shape you
+  use:
+  - **With `Parameters` set** (a named command + parameter list): `Get-SBResult` appends
+    `-Data:$Data` to the generated argument list automatically, so the invoked function just declares
+    an ordinary `-Data` parameter and reads out whatever you put there.
+  - **With `Parameters` NOT set** (raw `Request` text of any shape): nothing is appended - your own
+    text can and should reference `$Data`/`$Data.<Key>` directly wherever it needs to, since the
+    closure already makes it resolvable there. This is what makes a genuine multi-statement script
+    body safe to use with `.Data` - appending text to the end of one would corrupt whatever line
+    happens to be last. Neither shape is preferred by this module; a single-command dispatch and a
+    multi-statement scriptblock are equally well supported.
 - `Result` - The server's response
 - `Error` - Any error information
 - `ServerPID` / `ClientPID` - Process identifiers
@@ -724,6 +846,44 @@ if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitProgress)
 
 Using the named constants makes code easier to read and means a single change to the constant
 definition updates all uses automatically.
+
+## Function tracing (the shared trace log)
+
+NamedPipe vendors a small, generic function-trace facility (`Enable-MyFunctionTrace`,
+`Disable-MyFunctionTrace`, `Clear-MyFunctionTraceLog`, `Clear-MyFunctionTraceArchive`; the writer
+`Write-MyFunctionTrace` stays internal). It writes to a log file, never to the console.
+
+```powershell
+Enable-MyFunctionTrace -Option 2      # -Option is mandatory, 1 to 3
+# ... run the operation ...
+Disable-MyFunctionTrace
+```
+
+`-Option` is a bitmask: **1** = ordinary per-function call tracing (every instrumented function, the full
+noisy call flow); **2** = curated action detail (the meaningful steps only, none of the plumbing);
+**3** = both. `Enable-MyFunctionTrace` prints one line saying what was enabled and which file it is
+writing to. Call it BEFORE `Start-PipeSession`: the setting is carried to the elevated server, so a
+client and its own server write to the same file.
+
+**Bit 2 detail.** A caller that wants a step recorded passes a short `Detail:[...]` text to
+`Write-MyFunctionTrace -Detail`, guarded by its own bit-2 check. NamedPipe's `Get-SBResult` does this for
+every request it runs (the request text, already redacted), and a consumer module can do the same for its
+own steps. `Write-MyFunctionTrace` does no redaction and no caller checking of its own - the caller owns
+what it passes. (Earlier builds restricted `-Detail` to a hardcoded caller list; that was removed so the
+shared function names no module.) A wrapper that only forwards a message can pass `-SkipFrames 1` so the
+log line names the wrapper's caller rather than the wrapper.
+
+**One file per window.** Enabling tracing creates a short session id (`$env:MyFunctionTraceSessionId`) and
+the log file is `C:\ProgramData\FunctionTrace\FunctionTrace-Session-<Id>.log`, so two PowerShell windows
+tracing at once do not interleave. `Enable-MyFunctionTrace -NewSession` starts a fresh file in the same
+window. `Clear-MyFunctionTraceLog` archives the current window's file (the session id stays in the archive
+name), and `Clear-MyFunctionTraceArchive` prunes old archives and session files by age.
+
+**Security caveat - the trace log is not protected.** The folder and file are created with whatever
+default permissions `C:\ProgramData` gives, with no explicit ACL. On a machine used by more than one
+account, another local user may be able to read what is traced (paths, program names, timing, refusal
+reasons such as a required group name). Treat anything traced with the same sensitivity as console
+output, not as a private record. Hardening the file permissions is a known follow-up, not done yet.
 
 ## Server diagnostics log
 
@@ -867,7 +1027,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.14' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.15' }
     )
 }
 ```
@@ -1028,9 +1188,6 @@ These are exported and available to consumers:
 | `Exit-Pipe` | Gracefully closes pipe on error conditions |
 | `Assert-File` | File assertion utility |
 | `Assert-Folder` | Folder assertion utility |
-| `Initialize-BPList` | Breakpoint list initialisation |
-| `Remove-Breakpoint` | Removes breakpoints |
-| `Set-Breakpoint` | Sets breakpoints |
 | `Send-ProgressInfo` | Sends progress messages from server to client |
 
 ### Internal Functions (Not Exported)
@@ -1053,9 +1210,34 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.14   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.15   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
+
+## Debugging the server side
+
+The server runs as a separate, often elevated, process, which used to make it hard to inspect while
+a request was in flight. An earlier version of this module carried a custom dynamic breakpoint-list
+facility (`Initialize-BPList`/`Set-Breakpoint`/`Remove-Breakpoint`) built to work around that. It was
+removed (nothing had called it in a long time) in favour of PowerShell's own built-in remote
+debugging, which needs no code in this module at all:
+
+```powershell
+# From a session on the SAME machine as the server process:
+Enter-PSHostProcess -Id $ServerPID     # $ServerPID is already on DataObject/ServerClientParams
+Debug-Runspace -Id 1                   # lists to 1 if there's only one runspace; Get-Runspace to check
+
+# Once attached, use normal debugging commands against the live server process:
+Set-PSBreakpoint -Command Get-SBResult
+# or plant `Wait-Debugger` at a specific point in a server-side function and it will break
+# as soon as a debugger is attached via Enter-PSHostProcess/Debug-Runspace.
+
+Exit-PSHostProcess   # when done
+```
+
+This supports full interactive debugging (step, inspect variables, call stack) against the actual
+running server process, rather than a pre-planted, more limited breakpoint list - and requires
+nothing to be added to a request to enable it.
 
 ## Troubleshooting
 

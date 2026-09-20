@@ -22,7 +22,7 @@ Param (
 )
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.14 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.15 -ErrorAction Stop
 
 $Script:Pass = $true
 function Assert-Case
@@ -93,7 +93,7 @@ try
 	# --- 3. RECOVERY: legit reconnect with the CORRECT nonce is admitted (server kept re-listening). ---
 	$Private:Recovered = $false
 	$Private:RlScp = Set-ObjectParameterSet -Client -Dataset $StrServerClientParams -MyParameters $ServerClientParams
-	$Private:RlMod = Get-Module -Name NamedPipe | Where-Object { $_.Version -eq [version]'0.14' } | Select-Object -First 1
+	$Private:RlMod = Get-Module -Name NamedPipe | Where-Object { $_.Version -eq [version]'0.15' } | Select-Object -First 1
 	$Private:RlScp.$StrPipeInfo = $Private:RlMod.Invoke(
 		{ param($d) Start-PipeServerOrClient -SerialData $d },
 		(ConvertTo-Serial -Object $Private:RlScp))

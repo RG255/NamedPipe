@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-WindowName.ps1 by Sync-SharedUtilities [SHA256 8066A357D4134F63C3053C51FC8CCBB80466FEDB7BE0B41641EFF163FB212DF8] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-WindowName.ps1 by Sync-SharedUtilities [SHA256 7838BA6176B6FCC02BA06DA29A0AF34FB6B09B93980C96556B389DF59681947B] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Get-WindowName
 {
 	<#
@@ -15,6 +15,13 @@ Function Get-WindowName
 		[Parameter(Mandatory = $True, ValueFromPipeline = $True)]
 		[IntPtr]$hwnd
 	)
+	Begin
+	{
+		# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+	}
 	Process
 	{
 		If (-not ('WindowHelper.WindowText' -as [type]))

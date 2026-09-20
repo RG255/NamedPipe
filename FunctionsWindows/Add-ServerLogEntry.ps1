@@ -24,10 +24,23 @@
 		[AllowEmptyString()]
 		[String]$Message
 	)
-	if ($null -eq $Script:ServerLogBuffer)
-	{ $Script:ServerLogBuffer = [System.Collections.Generic.List[string]]::new() }
-	# Ring cap: bound growth so a long-lived or flooded server cannot grow the buffer without limit.
-	if ($Script:ServerLogBuffer.Count -ge 1000)
-	{ $Script:ServerLogBuffer.RemoveAt(0) }
-	$Script:ServerLogBuffer.Add(('{0:HH:mm:ss.fff}  {1}' -f (Get-Date), $Message))
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
+	# 2026-09-15: wrapped - this is a diagnostics convenience, so a failure here must never break the
+	# real pipe operation calling it (same "logging must never affect the session" contract as
+	# Save-ServerLog/Remove-OldServerLog), but per the user's own stated principle it still must not
+	# vanish silently - Write-MyCatchAudit makes it trackable either way.
+	Try
+	{
+		if ($null -eq $Script:ServerLogBuffer)
+		{ $Script:ServerLogBuffer = [System.Collections.Generic.List[string]]::new() }
+		# Ring cap: bound growth so a long-lived or flooded server cannot grow the buffer without limit.
+		if ($Script:ServerLogBuffer.Count -ge 1000)
+		{ $Script:ServerLogBuffer.RemoveAt(0) }
+		$Script:ServerLogBuffer.Add(('{0:HH:mm:ss.fff}  {1}' -f (Get-Date), $Message))
+	}
+	Catch
+	{
+		Write-MyCatchAudit -Source 'Add-ServerLogEntry: failed to append to the in-memory server log buffer - diagnostics only, must not affect the real pipe operation' -ErrorRecord $_
+	}
 }

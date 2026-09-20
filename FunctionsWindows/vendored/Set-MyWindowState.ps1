@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-MyWindowState.ps1 by Sync-SharedUtilities [SHA256 6ECF1FDB94FD5E0069BDFC65BA62EBD2906827F2511F27E80AA7B49CC05E12B6] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-MyWindowState.ps1 by Sync-SharedUtilities [SHA256 2234BB7B1D8401E37E1E412B537B19E9CAEB9FA969DCB8D7ED8522868651D346] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Set-MyWindowState
 {
 	<#
@@ -41,6 +41,11 @@ Function Set-MyWindowState
 		[ValidateSet('Hide', 'Show', 'Minimize', 'Restore', 'Maximize', 'Normal')]
 		[String]$State
 	)
+
+	# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
 
 	If (-not ([System.Management.Automation.PSTypeName]'CS.WinState').Type)
 	{

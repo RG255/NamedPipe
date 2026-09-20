@@ -143,13 +143,10 @@ $script:FunctionExportTable = @{
 	'Assert-Folder'            = $true
 	'Exit-Pipe'                = $true
 	'Get-NewPipeName'          = $false   # internal
-	'Initialize-BPList'        = $true
 	'Receive-Data'             = $false   # internal
-	'Remove-Breakpoint'       = $true
 	'Send-Data'                = $false   # internal
 	'Send-ProgressInfo'        = $true
 	'Send-Request'             = $true
-	'Set-Breakpoint'          = $true
 	'Set-PipeSecurity'         = $false   # internal
 	'Set-PipeIntegrityLabel'   = $false   # internal - 0.11 mandatory-label hardening (4.1b)
 	'Add-ServerLogEntry'       = $false   # internal - 0.11 diagnostics log (4.5 step 1a)
@@ -169,6 +166,17 @@ $script:FunctionExportTable = @{
 	# Catch-audit vendoring (2026-09-09) - see Modules\Shared-Usage.psd1's EXCEPTION note. The other
 	# 4 default to $true (exported) by NOT being listed here, same as every other name above.
 	'Write-MyCatchAudit'       = $false   # internal - vendored, same treatment as Get-MyError
+	# Function-trace facility (2026-09-15) - Write-MyFunctionTrace/Get-MyFunctionTracePath/
+	# Format-MyFunctionTraceLine stay internal (vendored, same treatment as Write-MyCatchAudit); only
+	# the Enable-/Disable- toggle pair is exported, by NOT being listed here (same default-true
+	# convention the catch-audit family above already uses).
+	'Write-MyFunctionTrace'      = $false
+	'Get-MyFunctionTracePath'    = $false
+	'Format-MyFunctionTraceLine' = $false
+	# 2026-09-16: Invoke-FileManagement (plumbing behind Clear-MyCatchAuditArchive/Clear-MyFunctionTraceArchive)
+	# stays internal, same treatment as Write-MyCatchAudit above; the two Clear-*Archive functions
+	# themselves are meant to be typed at the console, so they default to exported by NOT being listed.
+	'Invoke-FileManagement'      = $false
 }
 
 $script:DefaultModuleToLoad = @{
@@ -408,23 +416,8 @@ $MyVars = @{
 			Scope  = $VSScript
 			Option = $VOReadOnly
 		}
-		StrExtVHDX             = @{
-			Value  = [string]'.vhdx'
-			Scope  = $VSScript
-			Option = $VOReadOnly
-		}
-		StrExtVSSLOG           = @{
-			Value  = [string]'.vsslog'
-			Scope  = $VSScript
-			Option = $VOReadOnly
-		}
 		StrExtXML              = @{
 			Value  = [string]'.xml'
-			Scope  = $VSScript
-			Option = $VOReadOnly
-		}
-		StrExtVHD              = @{
-			Value  = [String]'.vhd'
 			Scope  = $VSScript
 			Option = $VOReadOnly
 		}
@@ -565,26 +558,6 @@ $MyVars = @{
 		}
 		MyInitialCallingScript = @{
 			Value  = $Null
-			Scope  = $VSScript
-			Option = $VONone
-		}
-		FTraceInternalCall     = @{
-			Value  = $False
-			Scope  = $VSScript
-			Option = $VONone
-		}
-		FTraceAllCalls         = @{
-			Value  = $False
-			Scope  = $VSScript
-			Option = $VONone
-		}
-		FTLogFilPath           = @{
-			Value  = $Null
-			Scope  = $VSScript
-			Option = $VONone
-		}
-		FTrace                 = @{
-			Value  = $False
 			Scope  = $VSScript
 			Option = $VONone
 		}

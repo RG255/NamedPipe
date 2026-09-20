@@ -9,13 +9,13 @@ param(
 $ErrorActionPreference = 'Stop'
 try {
 	Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-	Import-Module NamedPipe -RequiredVersion 0.14 -Force -ErrorAction Stop
+	Import-Module NamedPipe -RequiredVersion 0.15 -Force -ErrorAction Stop
 
 	# Build a client that connects to the EXISTING pipe by name and does a HANDIN (no nonce of its own).
 	$scp = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters @{ PipeName = $PipeName; Handin = $true }
 	$scp = Set-ObjectParameterSet -Client -Dataset $StrServerClientParams -MyParameters $scp
 	$srp = Set-ObjectParameterSet -Dataset $StrSendRequestParams -MyParameters $scp
-	$mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.14' } | Select-Object -First 1
+	$mod = Get-Module NamedPipe | Where-Object { $_.Version -eq [version]'0.15' } | Select-Object -First 1
 	$scp.$StrPipeInfo = $mod.Invoke({ param($d) Start-PipeServerOrClient -SerialData $d }, (ConvertTo-Serial -Object $scp))
 	$srp.$StrPipeInfo = $scp.$StrPipeInfo
 

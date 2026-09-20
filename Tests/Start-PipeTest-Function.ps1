@@ -30,9 +30,9 @@ Function Start-PipeTest
 	)
 
 	Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-	# Use the DEPLOYED 0.14 by name+version (the spawned server re-resolves the module and the
-	# source dev folder is not on PSModulePath, which caused connect timeouts). Deploy 0.14 first.
-	Import-Module -Name NamedPipe -Force -RequiredVersion 0.14
+	# Use the DEPLOYED 0.15 by name+version (the spawned server re-resolves the module and the
+	# source dev folder is not on PSModulePath, which caused connect timeouts). Deploy 0.15 first.
+	Import-Module -Name NamedPipe -Force -RequiredVersion 0.15
 	function Invoke-RequiredActions
 	{
 		<#

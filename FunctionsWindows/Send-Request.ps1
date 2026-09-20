@@ -82,6 +82,8 @@
 		$DataObject,
 		[Switch]$NoExitOnError
 	)
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	$Private:ProgressInfo = $False
 	$DataObject.$StrType = $Type
 	$DataObject.$StrRequest = $Request

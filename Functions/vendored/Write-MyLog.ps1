@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Write-MyLog.ps1 by Sync-SharedUtilities [SHA256 8C78BCFCF84094A2867C7972D2A9BBA29B5ACBEA3B5F918C89E106502204A291] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Write-MyLog.ps1 by Sync-SharedUtilities [SHA256 4453BC57491AB814B98F89D841479B01ADD0FA7CD55076EFC7C9E5F5C69C624B] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Write-MyLog
 {
 	<#
@@ -57,20 +57,31 @@ Function Write-MyLog
 	$Private:CallInfo = ''
 	$Private:MsgInfo  = ''
 
-	# Build call-stack trace line
-	if ($CallStack)
+	# Wrapped 2026-09-15 - same reasoning as Get-MyError.ps1's/Format-MyTextLine.ps1's own wraps: an
+	# unexpected $CallStack shape (e.g. too few frames for .FunctionName[1]/.Location[1]) throwing here
+	# would propagate out of what callers treat as a safe, best-effort logging call. On failure, both
+	# lines are simply left blank - nothing gets logged this call, but the caller is never interrupted.
+	Try
 	{
-		$Private:CallInfo = ('{0} Function:[{1}] in:[{3}] Called from:[{2}] Function:[{4}]' -f
-			$Private:DateStamp,
-			$CallStack.FunctionName[0],
-			$CallStack.Location[1],
-			$CallStack.Location[0].Split(':')[0],
-			$CallStack.FunctionName[1])
-	}
+		# Build call-stack trace line
+		if ($CallStack)
+		{
+			$Private:CallInfo = ('{0} Function:[{1}] in:[{3}] Called from:[{2}] Function:[{4}]' -f
+				$Private:DateStamp,
+				$CallStack.FunctionName[0],
+				$CallStack.Location[1],
+				$CallStack.Location[0].Split(':')[0],
+				$CallStack.FunctionName[1])
+		}
 
-	# Build message line
-	if ($Message)
-	{ $Private:MsgInfo = ('{0} {1}' -f $Private:DateStamp, $Message) }
+		# Build message line
+		if ($Message)
+		{ $Private:MsgInfo = ('{0} {1}' -f $Private:DateStamp, $Message) }
+	}
+	Catch
+	{
+		Write-MyCatchAudit -Source 'Write-MyLog: internal failure building the log line(s)' -ErrorRecord $_
+	}
 
 	# Write to file
 	try
@@ -86,13 +97,23 @@ Function Write-MyLog
 		Write-MyCatchAudit -Source 'Write-MyLog: write to the optional diagnostic log file - a logging failure must never take down the operation it is observing' -ErrorRecord $_
 	}
 
-	# Mirror to console if requested and session is interactive
-	if ($Console.IsPresent -and [Environment]::UserInteractive)
+	# Mirror to console if requested and session is interactive. Wrapped 2026-09-15 - Write-Host can
+	# genuinely throw in some non-interactive/redirected hosting scenarios (the same class of risk
+	# Write-MyCatchAudit's own doc calls out for [Console]::Error.WriteLine) - a console-mirroring
+	# convenience must never be able to take down the caller.
+	Try
 	{
-		if ($Private:CallInfo)
-		{ Write-Host -Object $Private:CallInfo -ForegroundColor Cyan }
-		if ($Private:MsgInfo)
-		{ Write-Host -Object $Private:MsgInfo  -ForegroundColor Magenta }
+		if ($Console.IsPresent -and [Environment]::UserInteractive)
+		{
+			if ($Private:CallInfo)
+			{ Write-Host -Object $Private:CallInfo -ForegroundColor Cyan }
+			if ($Private:MsgInfo)
+			{ Write-Host -Object $Private:MsgInfo  -ForegroundColor Magenta }
+		}
+	}
+	Catch
+	{
+		Write-MyCatchAudit -Source 'Write-MyLog: mirror the log line(s) to the console' -ErrorRecord $_
 	}
 	} # end Process
 }

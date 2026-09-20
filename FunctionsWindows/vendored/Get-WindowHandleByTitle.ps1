@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-WindowHandleByTitle.ps1 by Sync-SharedUtilities [SHA256 D4AE596BBF7215DBA8DEEDC4A0239A91C13D96AEB8898D3EBAD07DC6718C926B] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Get-WindowHandleByTitle.ps1 by Sync-SharedUtilities [SHA256 5CB9FCCE26AEE03F2E3466118C322F9882C3BA639EF0F6AEBA01D545CCDD039B] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Get-WindowHandleByTitle
 {
 	<#
@@ -15,6 +15,13 @@ Function Get-WindowHandleByTitle
 		[Parameter(Mandatory = $True, ValueFromPipeline = $True)]
 		[String]$WindowTitle
 	)
+	Begin
+	{
+		# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+	}
 	Process
 	{
 		If (-not ('WindowHelper.FindWindow' -as [type]))

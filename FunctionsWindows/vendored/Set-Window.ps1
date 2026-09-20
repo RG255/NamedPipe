@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-Window.ps1 by Sync-SharedUtilities [SHA256 5DE30098607AAAC1E5CD0D17A86116A040EF2A78E68EE6A855BEB64AA0A3E17C] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-Window.ps1 by Sync-SharedUtilities [SHA256 DF339B454DBA43D5A0C7237BDB0A976FA5E6B9F9326B5FFF0EB7154D574B201E] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Set-Window
 {
 	<#
@@ -132,6 +132,17 @@ Function Set-Window
 
 	Begin
 	{
+		# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+
+		# Nested helpers below (Add-WindowObjectMember, Get-WindowDetail, Set-WindowParameters,
+		# Get-ScreenResolution, Get-ProcessWindowHandle) are deliberately NOT traced (2026-09-15) - each
+		# is called once per resolved process ID inside this function's own Process block loop, and
+		# Set-Window's own trace stamp above already establishes the operation happened. Same per-item/
+		# stream-processing helper exemption as DnsTools' Format-DnsRecord.
+
 		# Lazy-load the Window/WindowInfo/WindowPlacement/CONSOLE_FONT_INFO types on first use.
 		# Publish-SetWindowCode compiles a fixed embedded C# string (no user input), so this
 		# is safe; the types cannot be declared in the manifest because Add-Type is per-process.

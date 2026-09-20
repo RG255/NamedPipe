@@ -38,11 +38,23 @@
 		[ValidateRange(0, [int]::MaxValue)]
 		[int]$Newest = 0
 	)
-	$Private:LogDir = Join-Path -Path $env:APPDATA -ChildPath 'NamedPipe-Logs'
-	if (-not (Test-Path -Path $Private:LogDir)) { return }
-	$Private:Filter = if ($PipeName) { 'server-*-{0}.log' -f $PipeName } else { 'server-*.log' }
-	$Private:Files = @(Get-ChildItem -Path $Private:LogDir -Filter $Private:Filter -File -ErrorAction SilentlyContinue |
-			Sort-Object -Property LastWriteTime -Descending)
-	if ($Newest -gt 0) { $Private:Files = @($Private:Files | Select-Object -First $Newest) }
-	$Private:Files
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
+	# 2026-09-15: wrapped - per the user's own stated principle, never assume the environment (e.g.
+	# $env:APPDATA) is correctly configured. Returns an empty result on failure, matching this
+	# function's own existing "nothing found" convention (the Test-Path miss above also returns empty).
+	Try
+	{
+		$Private:LogDir = Join-Path -Path $env:APPDATA -ChildPath 'NamedPipe-Logs'
+		if (-not (Test-Path -Path $Private:LogDir)) { return }
+		$Private:Filter = if ($PipeName) { 'server-*-{0}.log' -f $PipeName } else { 'server-*.log' }
+		$Private:Files = @(Get-ChildItem -Path $Private:LogDir -Filter $Private:Filter -File -ErrorAction SilentlyContinue |
+				Sort-Object -Property LastWriteTime -Descending)
+		if ($Newest -gt 0) { $Private:Files = @($Private:Files | Select-Object -First $Newest) }
+		$Private:Files
+	}
+	Catch
+	{
+		Write-MyCatchAudit -Source 'Get-PipeServerLog: failed to enumerate server diagnostics logs' -ErrorRecord $_
+	}
 }

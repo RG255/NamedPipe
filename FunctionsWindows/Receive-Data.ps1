@@ -40,6 +40,8 @@
 		$PipeInfo
 	)
 
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
 
 	Try
@@ -84,7 +86,12 @@
 		}
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{ Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Receive-Data: About to deserialize" -ForegroundColor Cyan }
-		$received = ConvertFrom-Serial -Text $line
+		# A 'JCHUNK:' prefix means Send-Data wrote this chunk WRAPPER via the lightweight ConvertTo-Json
+		# path (2026-09-15, see Send-Data's own comment) - decode it the matching cheap way. Anything
+		# without that prefix is the original, non-chunked ConvertTo-Serial output (raw Base64 text, which
+		# never legitimately starts with 'JCHUNK:') and still needs the full ConvertFrom-Serial path.
+		$received = If ($line.StartsWith('JCHUNK:')) { $line.Substring(7) | ConvertFrom-Json }
+		Else { ConvertFrom-Serial -Text $line }
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
 			Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Receive-Data: Deserialized OK" -ForegroundColor Green
@@ -129,10 +136,17 @@
 				$Private:_chunkTimeoutMs = if ($null -ne $PipeInfo.$StrChunkReadTimeout)
 				{ [int]$PipeInfo.$StrChunkReadTimeout } Else { 30000 }
 				$Private:_lineTask = $PipeInfo.$StrReader.ReadLineAsync()
+				# Caught by this function's own outer Catch (below) and converted to $DataObject.$StrError
+				# - never escapes to crash the process. The caller (Start-PipeServerOrClient's main loop,
+				# or a client's own Send-Data) still gets a normal returned DataObject to inspect.
 				If (-not $Private:_lineTask.Wait($Private:_chunkTimeoutMs))
 				{ throw "Receive-Data: timed out after $Private:_chunkTimeoutMs ms waiting for the next chunk of transfer $transferId." }
 				$line = $Private:_lineTask.Result
-				$chunk = ConvertFrom-Serial -Text $line
+				# Same 'JCHUNK:' prefix check as the first read above - every line from here on is a
+				# chunk continuation, so this always takes the lightweight branch in practice, but the
+				# check stays symmetric with the first read rather than assuming it.
+				$chunk = If ($line.StartsWith('JCHUNK:')) { $line.Substring(7) | ConvertFrom-Json }
+				Else { ConvertFrom-Serial -Text $line }
 
 				if ($chunk.IsChunked -and $chunk.TransferId -eq $transferId)
 				{
@@ -146,7 +160,9 @@
 				}
 				else
 				{
-					# Unexpected data - could be an error or different transfer
+					# Unexpected data - could be an error or different transfer. Same as the timeout
+					# throw above: caught by this function's own outer Catch, converted to
+					# $DataObject.$StrError - does not crash the process or collapse the pipe.
 					throw "Unexpected data received during chunked transfer $transferId"
 				}
 			}

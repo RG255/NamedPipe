@@ -49,8 +49,7 @@
 		[HashTable]$Options = @{},
 		[String[]]$AccessList
 	)
-	If ($Script:FTrace)
-	{Write-MyLog -PathToLogFile $Script:FTLogFilePath -CallStack (Get-PSCallStack)}
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
 
 	# Step 1: Create MyOptions from caller's bound parameters
 	$Private:MyOptions = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $MyParameters
@@ -72,6 +71,18 @@
 
 	# Step 4: Create ServerClientParams (server side) and SendRequestParams
 	$Private:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Private:MyOptions
+	# Carry the CLIENT's function-trace settings across to a spawned server (2026-09-16). Environment
+	# variables ARE inherited by a normally-spawned child process, but NOT across a -Verb RunAs
+	# elevation boundary (that goes through a separate broker process which gives the new process a
+	# fresh environment, not inherited from the caller) - confirmed live as the reason a genuinely
+	# UAC-elevated NamedPipe server produced zero trace output despite the client having tracing on.
+	# ServerClientParams already crosses this exact boundary via ConvertTo-Serial/-SerialData
+	# regardless of elevation, so stamping these two values onto it here and restoring them from it in
+	# Start-PipeServerOrClient.ps1's spawn bootstrap (before the module even loads) reaches the
+	# elevated side reliably either way. $env:MyFunctionTraceSessionId's own doc already claimed this
+	# mechanism existed - it did not; this is that mechanism, finally built for real.
+	$Private:ServerClientParams.FunctionTraceEnabled   = $env:MyFunctionTraceEnabled
+	$Private:ServerClientParams.FunctionTraceSessionId = $env:MyFunctionTraceSessionId
 	$Private:SendRequestParams = Set-ObjectParameterSet -Dataset $StrSendRequestParams -MyParameters $Private:ServerClientParams
 
 	# Debug output
@@ -104,6 +115,9 @@
 	if ($Private:ServerClientParams.$StrPipeInfo.$StrError)
 	{
 		$Private:ServerClientParams.$StrPipeInfo[0] | Write-Host
+		# This is the CLIENT's own initial connection setup, checked before Start-PipeSession ever
+		# returns a usable session - there is no working session/pipe yet for this to collapse, only a
+		# failed attempt to establish one.
 		throw 'Start-PipeSession: A fatal error has occurred, cannot continue!'
 	}
 

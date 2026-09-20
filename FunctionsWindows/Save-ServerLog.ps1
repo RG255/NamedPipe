@@ -45,6 +45,8 @@
 		[String]$PipeName
 	)
 
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	# Idempotent - first exit path to reach here owns the flush.
 	if ($Script:ServerLogSaved) { return $null }
 

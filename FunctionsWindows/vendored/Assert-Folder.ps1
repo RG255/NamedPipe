@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-Folder.ps1 by Sync-SharedUtilities [SHA256 26563722275E576CD08ACEF8D77224455D5508A842C9660F4806C52FE4F42371] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-Folder.ps1 by Sync-SharedUtilities [SHA256 E5604ADDC3FD30FF4FFAD788BE2883B74530D1C2C9D6BFE2625EC784C0B92C44] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Assert-Folder
 {
 	<#
@@ -42,6 +42,14 @@ Function Assert-Folder
 		[ValidateSet('Create', 'Remove', 'Test')]
 		[String]$Option = 'Test'
 	)
+
+	Begin
+	{
+		# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
+	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+	# $env:MyFunctionTraceEnabled can be '1' there regardless.
+	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+	}
 
 	Process
 	{

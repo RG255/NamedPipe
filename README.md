@@ -31,7 +31,7 @@ powershell.exe -NoProfile -File "D:\PowerShellScripts\Modules\Deploy-Modules.ps1
 Then import:
 
 ```powershell
-Import-Module NamedPipe -RequiredVersion 0.14
+Import-Module NamedPipe -RequiredVersion 0.15
 ```
 
 ## Documentation

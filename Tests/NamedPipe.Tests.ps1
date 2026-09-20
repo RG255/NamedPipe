@@ -57,9 +57,9 @@ Describe 'Module Import' {
 		Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
 	}
 
-	It 'Should be version 0.14' {
+	It 'Should be version 0.15' {
 		$Module = Get-Module -Name NamedPipe
-		$Module.Version.ToString() | Should -Be '0.14'
+		$Module.Version.ToString() | Should -Be '0.15'
 	}
 
 	It 'Should have a valid module version' {
@@ -1032,7 +1032,24 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 				# Left to the test process's own exit to reclaim, same as that pattern's
 				# "poison pill" workaround exists precisely because there is no other reliable
 				# option - there is no reader loop here to feed a poison pill to.
-				Write-Host 'Leaving the stuck background runspace/pipe for process exit to reclaim (see comment).'
+				#
+				# UPDATE 2026-09-20: "left for process exit to reclaim" does NOT work - a runspace's
+				# pipeline thread is a FOREGROUND thread, so the still-blocked reader kept the whole
+				# test process alive after Pester finished (Invoke-AllModuleTest.ps1 -Module NamedPipe
+				# hung after printing TOTAL). What DOES work, and is not the Stop()/Dispose()-the-
+				# blocked-stream approach described above, is closing the PEER (client) end: the
+				# blocked ReadLine() then sees EOF and returns on its own. Only after the runspace has
+				# actually finished are the server stream and runspace disposed.
+				try { $Private:Cli.Dispose() } catch { $null = $_ }
+				if ($Private:Async.AsyncWaitHandle.WaitOne(5000))
+				{
+					try { $null = $Private:PS.EndInvoke($Private:Async) } catch { $null = $_ }
+					try { $Private:Srv.Dispose() } catch { $null = $_ }
+					try { $Private:PS.Dispose() } catch { $null = $_ }
+					try { $Private:RS.Close(); $Private:RS.Dispose() } catch { $null = $_ }
+				}
+				else
+				{ Write-Host 'The stuck reader did not return after its peer closed; leaving it (process may not exit).' }
 			}
 
 			# By design (confirmed 2026-09-10): Receive-Data's FIRST read has no timeout, and a
@@ -1267,6 +1284,24 @@ Describe 'Set-ObjectParameterSet Parameter Flow' -Tag 'ParamFlow' {
 		It 'ChunkReadTimeout should default to 30000' {
 			$Script:Options.$StrChunkReadTimeout | Should -Be 30000
 		}
+
+		It 'RedactPotentialSecrets should default to $true' {
+			$Script:Options.$StrRedactPotentialSecrets | Should -BeTrue
+		}
+
+		It 'RedactPattern should default to $null' {
+			$Script:Options.$StrRedactPattern | Should -BeNullOrEmpty
+		}
+
+		It 'RequestPolicy should default to $null' {
+			$Script:Options.$StrRequestPolicy | Should -BeNullOrEmpty
+		}
+
+		It 'ModuleToLoad should default to the module-level default' {
+			$Private:Expected = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
+			$Script:Options.$StrModuleToLoad.Name | Should -Be $Private:Expected.Name
+			$Script:Options.$StrModuleToLoad.Version | Should -Be $Private:Expected.Version
+		}
 	}
 
 	Context 'MyOptions With Parameters' {
@@ -1306,6 +1341,34 @@ Describe 'Set-ObjectParameterSet Parameter Flow' -Tag 'ParamFlow' {
 			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
 			$Options.$StrChunkReadTimeout | Should -Be 2000
 		}
+
+		It 'Should pass RedactPotentialSecrets:$false value (2026-09-19 unification - this dataset used
+			to silently drop this field, requiring the -Options merge as the only working path)' {
+			$Params = @{ $StrRedactPotentialSecrets = $false }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$Options.$StrRedactPotentialSecrets | Should -BeFalse
+		}
+
+		It 'Should pass RedactPattern value' {
+			$Private:Pattern = @{ Option = 2; Pattern = '(?i)-Passphrase\s+\S+' }
+			$Params = @{ $StrRedactPattern = $Private:Pattern }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$Options.$StrRedactPattern.Pattern | Should -Be $Private:Pattern.Pattern
+		}
+
+		It 'Should pass RequestPolicy value' {
+			$Private:Policy = @{ Mode = 'AllowList' }
+			$Params = @{ $StrRequestPolicy = $Private:Policy }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$Options.$StrRequestPolicy.Mode | Should -Be 'AllowList'
+		}
+
+		It 'Should pass ModuleToLoad value' {
+			$Private:Module = @{ Name = 'SomeConsumerModule'; Version = '1.0' }
+			$Params = @{ $StrModuleToLoad = $Private:Module }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$Options.$StrModuleToLoad.Name | Should -Be 'SomeConsumerModule'
+		}
 	}
 
 	Context 'ServerClientParams Inherits From MyOptions' {
@@ -1331,6 +1394,467 @@ Describe 'Set-ObjectParameterSet Parameter Flow' -Tag 'ParamFlow' {
 			$SCP.$StrServerWaitTimeout | Should -Be 90
 			$SCP.$StrClientConnectTimeout | Should -Be 20000
 			$SCP.$StrChunkReadTimeout | Should -Be 5000
+		}
+
+		It 'Server params should default RedactPotentialSecrets to $true when never set anywhere' {
+			$Params = @{ $StrInfoDisplay = 1 }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$SCP = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
+			$SCP.$StrRedactPotentialSecrets | Should -BeTrue
+		}
+
+		It 'Server params should inherit an explicit RedactPotentialSecrets:$false set on MyOptions via
+			the -Options-merge path (Start-PipeSession''s own mechanism, where the value is set on the
+			built MyOptions object directly rather than passed through the dataset call''s own MyParameters)' {
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{}
+			$Options.$StrRedactPotentialSecrets = $false
+			$SCP = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
+			$SCP.$StrRedactPotentialSecrets | Should -BeFalse
+		}
+
+		It 'Server params should inherit an explicit RedactPotentialSecrets:$false passed via raw
+			MyParameters through the MyOptions dataset call itself (2026-09-19 unification - this path
+			used to silently drop the value, since RedactPotentialSecrets/RedactPattern/RequestPolicy/
+			ModuleToLoad were absent from the $StrMyOptions case''s own switch; now all four round-trip
+			the same way InfoDisplay/Depth/etc. always have)' {
+			$Params = @{ $StrRedactPotentialSecrets = $false }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$SCP = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
+			$SCP.$StrRedactPotentialSecrets | Should -BeFalse
+		}
+
+		It 'Client params should default RedactPotentialSecrets to $true when never set anywhere' {
+			$Params = @{ $StrInfoDisplay = 1 }
+			$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Params
+			$SCP = Set-ObjectParameterSet -Client -Dataset $StrServerClientParams -MyParameters $Options
+			$SCP.$StrRedactPotentialSecrets | Should -BeTrue
+		}
+	}
+}
+
+Describe 'Get-SBResult - Data channel' -Tag 'DataChannel' {
+	# Get-SBResult is deliberately unexported (see the 'FunctionExportTable' Describe below) -
+	# reached the same way this file's own BeforeAll reaches other internals: run inside the
+	# module's own scope, where $StrRequest/$StrData/$StrResult resolve.
+	BeforeAll {
+		$Private:Body = '& (Get-Module NamedPipe) ([scriptblock]::Create(''Get-SBResult @args'')) @args'
+		Set-Item -Path 'function:script:Get-SBResult' -Value ([scriptblock]::Create($Private:Body))
+
+		# A stand-in for a real consumer function (e.g. VHDTools' Invoke-VHDAction) - globally
+		# resolvable once "imported", same as any real module's exported command would be. Not a
+		# NamedPipe concept; just something for the generated request text to legitimately invoke.
+		function Global:Test-DataEcho { Param ($Data, $Dummy) return $Data }
+		function Global:Test-DataIsNull { Param ($Data) return ($null -eq $Data) }
+		function Global:Test-DataReturnsNull { Param ($Data) return $null }
+		function Global:Test-DataMandatory { Param ([Parameter(Mandatory)]$Data) return $Data }
+	}
+
+	AfterAll {
+		Remove-Item function:Global:Test-DataEcho, function:Global:Test-DataIsNull, function:Global:Test-DataReturnsNull, function:Global:Test-DataMandatory -ErrorAction SilentlyContinue
+	}
+
+	It '-Parameters branch: passes a single value through .Data to the invoked command as -Data' {
+		$DataObject = @{ Request = 'Test-DataEcho'; Parameters = @{ Dummy = 1 }; Data = 'a plain value' }
+		$Result = Get-SBResult -DataObject $DataObject
+		$Result.Result | Should -Be 'a plain value'
+	}
+
+	It '-Parameters branch: passes a hashtable through .Data to the invoked command as -Data (multi-value case)' {
+		$DataObject = @{ Request = 'Test-DataEcho'; Parameters = @{ Dummy = 1 }; Data = @{ A = 1; B = 'two' } }
+		$Result = Get-SBResult -DataObject $DataObject
+		$Result.Result.A | Should -Be 1
+		$Result.Result.B | Should -Be 'two'
+	}
+
+	It '-Parameters branch: does not append -Data when .Data is not populated - zero behaviour change for existing calls' {
+		$DataObject = @{ Request = 'Test-DataIsNull'; Parameters = @{ Dummy = 1 } }
+		$Result = Get-SBResult -DataObject $DataObject
+		$Result.Result | Should -BeTrue
+	}
+
+	It 'plain-Request branch: a bare command with no .Parameters still gets -Data appended unconditionally,
+		so a Mandatory -Data parameter on the invoked function is satisfied' {
+		# The gap this closes: Request = 'MyFunction' with no .Parameters used to fall through to the
+		# Else branch and get NOTHING appended, even though the consumer clearly populated .Data for
+		# a function that needs it - a Mandatory -Data parameter would fail to bind.
+		$DataObject = @{ Request = 'Test-DataMandatory'; Data = 'must arrive' }
+		$Result = Get-SBResult -DataObject $DataObject
+		$Result.Result | Should -Be 'must arrive'
+	}
+
+	It 'plain-Request branch: a multi-statement request that ends in an actual command invocation
+		tolerates the unconditional append AND its own earlier $Data.<Key> references resolve via
+		the closure - both mechanisms work together' {
+		# The final statement must be a genuine command invocation (not a bare expression like
+		# "$a + $b" or a parenthesised one - PowerShell rejects a trailing -Data:$Data after either,
+		# confirmed empirically) for the append to land somewhere syntactically valid. Test-DataEcho
+		# receives -Dummy (computed from $Data.A/$Data.B, resolved directly in the body) AND the
+		# appended -Data:$Data - it returns $Data, proving both routes reached the same closure value.
+		$DataObject = @{
+			Request = "`$Private:_a = `$Data.A`n`$Private:_b = `$Data.B`nTest-DataEcho -Dummy (`$Private:_a + '-' + `$Private:_b)"
+			Data    = @{ A = 'left'; B = 'right' }
+		}
+		$Result = Get-SBResult -DataObject $DataObject
+		$Result.Result.A | Should -Be 'left'
+		$Result.Result.B | Should -Be 'right'
+	}
+
+	It 'plain-Request branch: -Data is appended EVEN when doing so breaks the request''s syntax - that is
+		the consumer''s mistake to avoid, reported cleanly via .Error, not something this function
+		tries to detect or prevent' {
+		# The append lands unconditionally, with no attempt to check whether the request can safely
+		# take a trailing argument first. A request ending in something that cannot (e.g. a bare
+		# parenthesised expression as its last statement) genuinely fails to parse once appended -
+		# this is BY DESIGN: VHDTools/VaultTools avoid this entirely by keeping every elevated
+		# dispatch to a single command/function-plus-parameters shape (see Invoke-VHDAction and the
+		# VaultTools atomic Server\ functions) - a different consumer choosing a request shape that
+		# cannot tolerate the append is responsible for not populating .Data for it, or for shaping
+		# its own request text so the append is harmless (as the previous It block does).
+		$DataObject = @{
+			Request = "`$Private:_a = `$Data.A`n`$Private:_b = `$Data.B`n(`$Private:_a + '-' + `$Private:_b)"
+			Data    = @{ A = 'left'; B = 'right' }
+		}
+		$Result = Get-SBResult -DataObject $DataObject
+		[string]::IsNullOrWhiteSpace($Result.Result) | Should -BeTrue
+		$Result.Error | Should -Not -BeNullOrEmpty
+	}
+
+	It 'preserves a genuine $null result from the invoked command when .Data IS populated' {
+		$DataObject = @{ Request = 'Test-DataReturnsNull'; Data = 'irrelevant' }
+		$Result = Get-SBResult -DataObject $DataObject
+		$null -eq $Result.Result | Should -BeTrue
+	}
+
+	It 'demonstrates the failure mode: $Private:-scoped is silently lost by GetNewClosure()' {
+		# Standalone characterisation of the exact mechanism Get-SBResult relies on (see the
+		# comments beside 'GetNewClosure()' in Get-SBResult.ps1) - not a call through Get-SBResult
+		# itself, since the failure this guards against is a source-level mistake (using
+		# $Private:Data instead of a plain local), not something reachable through its public
+		# behaviour today. Kept in its OWN It block (fresh scope) - once a variable is created
+		# with $Private:, a later plain reassignment in the SAME scope does not clear the Private
+		# flag, so testing both cases in one block would silently contaminate the second.
+		$Private:Data = 'should not be visible inside the closure'
+		$SB = [ScriptBlock]::Create('$Data')   # bare reference, same as Get-SBResult builds
+		$Closure = $SB.GetNewClosure()
+		$Closure.InvokeReturnAsIs() | Should -BeNullOrEmpty
+	}
+
+	It 'demonstrates the fix: a plain local IS captured correctly by GetNewClosure()' {
+		$Data = 'plain local is captured correctly'
+		$SB = [ScriptBlock]::Create('$Data')
+		$Closure = $SB.GetNewClosure()
+		$Closure.InvokeReturnAsIs() | Should -Be 'plain local is captured correctly'
+	}
+}
+
+Describe 'Test-Base64String' -Tag 'RedactPotentialSecrets' {
+	It 'returns $true for a genuine base64-encoded value' {
+		$Encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('a real secret value'))
+		Test-Base64String -Value $Encoded | Should -BeTrue
+	}
+
+	It 'returns $false for an ordinary word whose length is NOT a multiple of 4' {
+		Test-Base64String -Value 'VHDOperations' | Should -BeFalse
+	}
+
+	It 'returns $false for an empty string' {
+		Test-Base64String -Value '' | Should -BeFalse
+	}
+
+	It 'accepts the documented residual false-positive: a short pure-alphanumeric word whose length
+		happens to be a multiple of 4 decodes without error - this is a KNOWN, accepted limitation of
+		any purely structural test, not a bug (see this function''s own doc comment and USERGUIDE.md)' {
+		Test-Base64String -Value 'Data' | Should -BeTrue
+	}
+
+	It 'returns $false for a string containing a real base64 padding character in the wrong place
+		(a FormatException case beyond just charset/length, exercising the recognized-catch path)' {
+		Test-Base64String -Value 'AB=C' | Should -BeFalse
+	}
+
+	It 'does NOT report an ordinary invalid candidate to the catch-audit log (the FormatException is wrapped in a MethodInvocationException and must still be recognized as expected)' {
+		Mock Write-MyCatchAudit -ModuleName NamedPipe -MockWith { }
+		# 4 characters (passes the length check) but not base64: reaches FromBase64String and fails there.
+		Test-Base64String -Value 'a!c$' | Should -BeFalse
+		Test-Base64String -Value 'W:\v' | Should -BeFalse
+		Should -Invoke Write-MyCatchAudit -ModuleName NamedPipe -Times 0 -Exactly
+	}
+}
+
+Describe 'Get-SBResult - RedactPotentialSecrets display transform' -Tag 'RedactPotentialSecrets' {
+	# Exercises the exact [regex]::Replace + Test-Base64String combination Get-SBResult.ps1 uses for
+	# its console-echo / trace-log display string - not a full pipe-session integration test (that
+	# would need a live ServerClientParams/InfoDisplay/tracing setup), but a direct test of the real
+	# transform logic against representative real request-text shapes, matching how this module's
+	# other tests isolate a mechanism rather than always driving it through the full pipe.
+	BeforeAll {
+		function Protect-TestDisplayText
+		{
+			# Mirrors Get-SBResult.ps1's CORRECTED (2026-09-19) mechanism: test each QUOTED VALUE as
+			# one atomic unit, not loose maximal runs of base64-alphabet characters anywhere in the
+			# text. The first version of this (both here and in Get-SBResult.ps1) matched runs directly
+			# and fragmented at every non-base64 character - found wrong via a real failure in the two
+			# It blocks below, which is exactly why they exist: a realistic, entirely non-secret VHD
+			# command line lost SIX words to false positives under the run-based version, including the
+			# 20-character parameter name 'CheckGroupMembership' and NamedPipe's own '-Data:$Data'
+			# marker text.
+			Param ([String]$Text)
+			[regex]::Replace($Text, "'([^']*)'|""([^""]*)""", {
+					Param ($Match)
+					$Inner = If ($Match.Groups[1].Success) { $Match.Groups[1].Value } Else { $Match.Groups[2].Value }
+					$Quote = $Match.Value.Substring(0, 1)
+					If (Test-Base64String -Value $Inner) { ('{0}<base64 encoded>{0}' -f $Quote) } Else { $Match.Value }
+				})
+		}
+	}
+
+	It 'masks a value that IS structurally valid base64 when it is the WHOLE content of a quoted
+		parameter value - a potential secret, per RedactPotentialSecrets'' own name (this mechanism
+		can never confirm actual sensitivity, only base64 shape)' {
+		$Encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('a value that could be sensitive'))
+		$Text = "Invoke-VHDAction -Data:'{0}'" -f $Encoded
+		$Masked = Protect-TestDisplayText -Text $Text
+		$Masked | Should -Not -Match ([regex]::Escape($Encoded))
+		$Masked | Should -Match '<base64 encoded>'
+	}
+
+	It 'leaves a realistic command line with paths/GUIDs/booleans/enum-like words completely
+		unchanged - a QUOTED PATH containing non-base64 characters (\, :, -, .) fails as a WHOLE and is
+		never fragmented into short pieces that might accidentally validate on their own (this is the
+		exact bug the first version of this mechanism had - see this Describe block''s own comment)' {
+		$Text = "Invoke-VHDAction  -DestinationPath:'W:\vhd\PSimple\tvhd-p.psd1' -VHDLocation:'W:\vhd\PSimple\tvhd-p.vhdx' -Action:'Invoke' -CheckGroupMembership:`$True"
+		Protect-TestDisplayText -Text $Text | Should -Be $Text
+	}
+
+	It 'leaves a bare $Data reference (the out-of-band channel marker) unchanged - it is a variable
+		name in the request text, never the real value, and bare (unquoted) tokens are never candidates
+		under this mechanism' {
+		$Text = "Invoke-VHDAction -Action:'Invoke' -WriteNewConfig:`$True -Data:`$Data"
+		Protect-TestDisplayText -Text $Text | Should -Be $Text
+	}
+
+	It 'masks a genuine base64-shaped quoted value even when it sits next to ordinary unquoted text -
+		proves the quoted-value approach still catches an embedded secret, not just whole-string cases' {
+		$Encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('a value that could be sensitive'))
+		$Text = "Invoke-VHDAction -Action:'Invoke' -SomeFlag:`$True -Data:'{0}'" -f $Encoded
+		$Masked = Protect-TestDisplayText -Text $Text
+		$Masked | Should -Be ("Invoke-VHDAction -Action:'Invoke' -SomeFlag:`$True -Data:'<base64 encoded>'")
+	}
+}
+
+Describe 'Get-SBResult - RedactPotentialSecrets end-to-end gating (real function, real ServerClientParams)' -Tag 'RedactPotentialSecrets' {
+	# Closes a real gap: the display-transform Describe above re-implements the algorithm
+	# (Protect-TestDisplayText) purely to unit-test the regex/evaluator in isolation, and the
+	# 'ServerClientParams Inherits From MyOptions' Context above only proves Set-ObjectParameterSet's
+	# OWN plumbing, never that Get-SBResult actually reads the result of that plumbing. Neither proves
+	# the real Get-SBResult function reads $ServerClientParams.RedactPotentialSecrets and gates on it.
+	# This Describe calls the REAL Get-SBResult (same module-scope redirection technique as the 'Data
+	# channel' Describe above) with a REAL ServerClientParams built by the REAL Set-ObjectParameterSet,
+	# and intercepts the console-echo call (Send-ProgressInfo, exported) to inspect what Get-SBResult
+	# actually decided to display - proving the option's effect end-to-end, not just algorithmically.
+	BeforeAll {
+		$Private:Body = '& (Get-Module NamedPipe) ([scriptblock]::Create(''Get-SBResult @args'')) @args'
+		Set-Item -Path 'function:script:Get-SBResult' -Value ([scriptblock]::Create($Private:Body))
+		function Global:Test-EchoValue { Param ($Value) return $Value }
+	}
+
+	AfterAll {
+		Remove-Item function:Global:Test-EchoValue -ErrorAction SilentlyContinue
+		Remove-Variable -Name ServerClientParams -Scope Global -ErrorAction SilentlyContinue
+	}
+
+	BeforeEach {
+		$Script:CapturedConsoleString = $null
+		Mock Send-ProgressInfo -ModuleName NamedPipe -MockWith { $Script:CapturedConsoleString = $String } -ParameterFilter { $Type -eq 'Console' }
+	}
+
+	It 'masks a potential secret in the real console echo when RedactPotentialSecrets is $true (the explicit default built by Set-ObjectParameterSet)' {
+		$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{ $StrInfoDisplay = $InfoDisplayBitProgress }
+		$Global:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
+		$Global:ServerClientParams.$StrRedactPotentialSecrets | Should -BeTrue   # sanity: confirms the default really is on before the real assertion below
+
+		$Private:Encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('a value that could be sensitive'))
+		$DataObject = @{ Request = "Test-EchoValue -Value '{0}'" -f $Private:Encoded }
+		$null = Get-SBResult -DataObject $DataObject
+
+		$Script:CapturedConsoleString | Should -Match '<base64 encoded>'
+		$Script:CapturedConsoleString | Should -Not -Match ([regex]::Escape($Private:Encoded))
+	}
+
+	It 'shows the real value in the console echo when RedactPotentialSecrets is explicitly $false - the documented opt-out' {
+		# RedactPotentialSecrets is not part of the $StrMyOptions dataset's own switch case (same
+		# tier as RedactPattern/RequestPolicy/ModuleToLoad) - set on the built object afterward,
+		# exactly as Start-PipeSession's own -Options merge step does for a real consumer.
+		$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{ $StrInfoDisplay = $InfoDisplayBitProgress }
+		$Options.$StrRedactPotentialSecrets = $false
+		$Global:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
+		$Global:ServerClientParams.$StrRedactPotentialSecrets | Should -BeFalse
+
+		$Private:Encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('a value that could be sensitive'))
+		$DataObject = @{ Request = "Test-EchoValue -Value '{0}'" -f $Private:Encoded }
+		$null = Get-SBResult -DataObject $DataObject
+
+		$Script:CapturedConsoleString | Should -Match ([regex]::Escape($Private:Encoded))
+	}
+
+	It 'leaves an ordinary, non-secret-shaped request line unchanged in the real console echo either way' {
+		$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{ $StrInfoDisplay = $InfoDisplayBitProgress }
+		$Global:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
+
+		$DataObject = @{ Request = "Test-EchoValue -Value 'W:\vhd\PSimple\tvhd-p.psd1'" }
+		$null = Get-SBResult -DataObject $DataObject
+
+		$Script:CapturedConsoleString | Should -Match ([regex]::Escape("Test-EchoValue -Value 'W:\vhd\PSimple\tvhd-p.psd1'"))
+	}
+}
+
+Describe 'Function trace facility - per-session file, -Detail, -SkipFrames' -Tag 'FunctionTrace' {
+	# $env:ProgramData is redirected to a temp folder for the whole block so no test touches the real
+	# C:\ProgramData\FunctionTrace log, and every environment variable the facility reads is restored.
+	BeforeAll {
+		$Script:FTModule = Get-Module -Name NamedPipe
+		$Script:FTSaved = @{
+			ProgramData = $env:ProgramData
+			Enabled     = $env:MyFunctionTraceEnabled
+			SessionId   = $env:MyFunctionTraceSessionId
+			Filter      = $env:MyFunctionTraceFilter
+		}
+		$Script:FTRoot = Join-Path -Path ([IO.Path]::GetTempPath()) -ChildPath ('NPFT-{0}' -f [Guid]::NewGuid().ToString('N'))
+		$null = New-Item -Path $Script:FTRoot -ItemType Directory -Force
+		$env:ProgramData = $Script:FTRoot
+		$Script:FTDir = Join-Path -Path $Script:FTRoot -ChildPath 'FunctionTrace'
+		& $Script:FTModule {
+			function script:Test-FTDirect { Write-MyFunctionTrace -Detail 'direct' }
+			function script:Test-FTNoDetail { Write-MyFunctionTrace }
+			function script:Test-FTWrapper { Param ($D) Write-MyFunctionTrace -Detail $D -SkipFrames 1 }
+			function script:Test-FTCaller { Test-FTWrapper -D 'wrapped' }
+		}
+	}
+
+	AfterAll {
+		& $Script:FTModule {
+			Remove-Item -Path 'function:script:Test-FTDirect', 'function:script:Test-FTNoDetail', 'function:script:Test-FTWrapper', 'function:script:Test-FTCaller' -ErrorAction SilentlyContinue
+		}
+		$env:ProgramData                = $Script:FTSaved.ProgramData
+		$env:MyFunctionTraceEnabled     = $Script:FTSaved.Enabled
+		$env:MyFunctionTraceSessionId   = $Script:FTSaved.SessionId
+		$env:MyFunctionTraceFilter      = $Script:FTSaved.Filter
+		Remove-Item -Path $Script:FTRoot -Recurse -Force -ErrorAction SilentlyContinue
+	}
+
+	BeforeEach {
+		$env:MyFunctionTraceEnabled   = '3'
+		$env:MyFunctionTraceSessionId = 'pester01'
+		$env:MyFunctionTraceFilter    = $null
+		If (Test-Path -Path $Script:FTDir) { Remove-Item -Path (Join-Path $Script:FTDir '*') -Force -ErrorAction SilentlyContinue }
+		$Script:FTLog = Join-Path -Path $Script:FTDir -ChildPath 'FunctionTrace-Session-pester01.log'
+	}
+
+	Context 'Get-MyFunctionTracePath' {
+		It 'returns the shared FunctionTrace.log when no session id is set' {
+			$env:MyFunctionTraceSessionId = $null
+			$P = & $Script:FTModule { Get-MyFunctionTracePath }
+			(Split-Path -Path $P -Leaf) | Should -Be 'FunctionTrace.log'
+		}
+
+		It 'returns FunctionTrace-Session-(id).log when a session id is set' {
+			$P = & $Script:FTModule { Get-MyFunctionTracePath }
+			(Split-Path -Path $P -Leaf) | Should -Be 'FunctionTrace-Session-pester01.log'
+		}
+
+		It 'strips path characters from the session id so it cannot leave the trace folder' {
+			$env:MyFunctionTraceSessionId = '..\..\evil'
+			$P = & $Script:FTModule { Get-MyFunctionTracePath }
+			(Split-Path -Path $P -Leaf) | Should -Be 'FunctionTrace-Session-evil.log'
+			(Split-Path -Path $P -Parent) | Should -Be $Script:FTDir
+		}
+	}
+
+	Context 'Enable-MyFunctionTrace' {
+		It 'rejects an -Option outside 1-3' {
+			{ Enable-MyFunctionTrace -Option 0 } | Should -Throw
+			{ Enable-MyFunctionTrace -Option 4 } | Should -Throw
+		}
+
+		It 'sets the bitmask, creates a session id, and prints the single confirmation line' {
+			$env:MyFunctionTraceSessionId = $null
+			$Out = @(Enable-MyFunctionTrace -Option 2)
+			$env:MyFunctionTraceEnabled | Should -Be '2'
+			$env:MyFunctionTraceSessionId | Should -Match '^[0-9a-f]{8}$'
+			$Out.Count | Should -Be 1
+			$Out[0] | Should -Match 'Function-call tracing is ON \(Option=2\) for this process\. Log: .*FunctionTrace-Session-[0-9a-f]{8}\.log'
+		}
+
+		It 'creates the session file itself, so an elevated server never becomes its creator (client would be denied)' {
+			$env:MyFunctionTraceSessionId = 'pester02'
+			$Expected = Join-Path -Path $Script:FTDir -ChildPath 'FunctionTrace-Session-pester02.log'
+			Test-Path -LiteralPath $Expected | Should -BeFalse
+			$null = Enable-MyFunctionTrace -Option 2
+			Test-Path -LiteralPath $Expected | Should -BeTrue
+		}
+
+		It 'reuses the session id on a second call and only changes it with -NewSession' {
+			$env:MyFunctionTraceSessionId = $null
+			$null = Enable-MyFunctionTrace -Option 1
+			$First = $env:MyFunctionTraceSessionId
+			$null = Enable-MyFunctionTrace -Option 1
+			$env:MyFunctionTraceSessionId | Should -Be $First
+			$null = Enable-MyFunctionTrace -Option 1 -NewSession
+			$env:MyFunctionTraceSessionId | Should -Not -Be $First
+		}
+	}
+
+	Context 'Write-MyFunctionTrace -Detail and -SkipFrames' {
+		It 'appends Detail:[...] for any caller (no allowlist) and names the calling function' {
+			& $Script:FTModule { Test-FTDirect }
+			$Line = Get-Content -Path $Script:FTLog -Raw
+			$Line | Should -Match 'Function:\[(script:)?Test-FTDirect\]'
+			$Line | Should -Match 'Detail:\[direct\]'
+		}
+
+		It 'writes a plain line with no Detail suffix when -Detail is not given' {
+			& $Script:FTModule { Test-FTNoDetail }
+			$Line = Get-Content -Path $Script:FTLog -Raw
+			$Line | Should -Match 'Function:\[(script:)?Test-FTNoDetail\]'
+			$Line | Should -Not -Match 'Detail:'
+		}
+
+		It 'attributes the line to the wrapper''s caller with -SkipFrames 1, not to the wrapper' {
+			& $Script:FTModule { Test-FTCaller }
+			$Line = Get-Content -Path $Script:FTLog -Raw
+			$Line | Should -Match 'Function:\[(script:)?Test-FTCaller\]'
+			$Line | Should -Not -Match 'Function:\[(script:)?Test-FTWrapper\]'
+			$Line | Should -Match 'Detail:\[wrapped\]'
+		}
+
+		It 'applies $env:MyFunctionTraceFilter to the skipped-to caller' {
+			$env:MyFunctionTraceFilter = 'script:Test-FTCaller'
+			& $Script:FTModule { Test-FTCaller; Test-FTDirect }
+			$Line = Get-Content -Path $Script:FTLog -Raw
+			$Line | Should -Match 'Detail:\[wrapped\]'
+			$Line | Should -Not -Match 'Detail:\[direct\]'
+		}
+	}
+
+	Context 'Clear-MyFunctionTraceLog and Clear-MyFunctionTraceArchive' {
+		It 'archives the window''s own session file and keeps the session id in the archive name' {
+			& $Script:FTModule { Test-FTDirect }
+			Test-Path -Path $Script:FTLog | Should -BeTrue
+			$null = Clear-MyFunctionTraceLog -Confirm:$false
+			Test-Path -Path $Script:FTLog | Should -BeFalse
+			@(Get-ChildItem -Path $Script:FTDir -Filter 'FunctionTrace-Archived-*-Session-pester01.log').Count | Should -Be 1
+		}
+
+		It 'prunes only OLD session files by age and never a recently written one' {
+			$null = New-Item -Path $Script:FTDir -ItemType Directory -Force
+			$Old = Join-Path $Script:FTDir 'FunctionTrace-Session-oldold01.log'
+			$New = Join-Path $Script:FTDir 'FunctionTrace-Session-newnew01.log'
+			Set-Content -Path $Old -Value 'x'
+			Set-Content -Path $New -Value 'x'
+			(Get-Item -Path $Old).LastWriteTime = (Get-Date).AddDays(-200)
+			$null = Clear-MyFunctionTraceArchive -DaysOld 90
+			Test-Path -Path $Old | Should -BeFalse
+			Test-Path -Path $New | Should -BeTrue
 		}
 	}
 }
@@ -1515,9 +2039,9 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
 		$Default.Name | Should -Be 'NamedPipe'
 	}
 
-	It 'Should have Version set to 0.14' {
+	It 'Should have Version set to 0.15' {
 		$Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-		$Default.Version | Should -Be '0.14'
+		$Default.Version | Should -Be '0.15'
 	}
 }
 

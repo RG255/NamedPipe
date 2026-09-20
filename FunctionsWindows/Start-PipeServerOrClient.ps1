@@ -8,48 +8,86 @@ Param (
 )
 If ($Spawned)
 {
-	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
-	# Bootstrap: $PSScriptRoot resolves to this script's installed FunctionsWindows\ directory.
-	# Import the owning NamedPipe manifest so ConvertFrom-Serial is available before we
-	# deserialise ServerClientParams. Works independently of profile or PSModulePath state.
-	Import-Module -Name (Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'NamedPipe.psd1') -ErrorAction Stop
-	$ServerClientParams = ConvertFrom-Serial -Text $SerialData
-	# Import the consumer module (e.g. VHD). NamedPipe is already loaded above; importing
-	# VHD (which RequiredModules NamedPipe) or NamedPipe again are both no-ops for NamedPipe.
-	# Prefer full path import (works even when $PSModulePath excludes network/OneDrive drives).
-	$Private:mtl = $ServerClientParams.ModuleToLoad
-	if ($Private:mtl.Path -and (Test-Path -Path $Private:mtl.Path))
-	{ Import-Module -Name $Private:mtl.Path -ErrorAction Stop }
-	else
-	{ Import-Module -Name $Private:mtl.Name -RequiredVersion $Private:mtl.Version -ErrorAction Stop }
-	# InfoDisplay bitmask: 1=server/client progress, 2=Show-VerboseData, 4=debug output
-	if ($ServerClientParams.$StrInfoDisplay -band 4)
+	# 2026-09-15: wrapped - this bootstrap runs BEFORE the NamedPipe module (and therefore
+	# Write-MyFunctionTrace/Write-MyCatchAudit, both internal/not-exported) is available to this bare
+	# top-level script scope, so neither can be called here even after Import-Module succeeds -
+	# FunctionsToExport genuinely gates visibility, not just discoverability. Per the user's own stated
+	# principle, a failure here must still be made trackable rather than just crashing the spawned
+	# process silently (often with a hidden window, so nothing would ever be seen) - the Windows Event
+	# Log is used directly (a plain .NET API, no module scope issue) since the 'NamedPipe' source is
+	# already registered by Register-PipeEventSource/Deploy-Modules; degrades to Write-Error if even
+	# that is unavailable (e.g. source never registered).
+	Try
 	{
-		Write-Host -Object ('DEBUG SPAWN: Server process started, PS version = {0}' -f $PSVersionTable.PSVersion) -ForegroundColor Yellow
-		Write-Host -Object ('DEBUG SPAWN: Imported {0} v{1}' -f $ServerClientParams.ModuleToLoad.Name, $ServerClientParams.ModuleToLoad.version) -ForegroundColor Green
-	}
-	if ($ServerClientParams.$StrInfoDisplay -band 2)
-	{
-		Show-VerboseData -Object $ServerClientParams -Display -Title 'ServerClientParams'
-		Show-VerboseData -Object $ServerClientParams.$StrModuleToLoad -Display -Title 'Module to load in Spawned process'
-	}
+		$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
+		# Bootstrap: $PSScriptRoot resolves to this script's installed FunctionsWindows\ directory.
+		# Import the owning NamedPipe manifest so ConvertFrom-Serial is available before we
+		# deserialise ServerClientParams. Works independently of profile or PSModulePath state.
+		Import-Module -Name (Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'NamedPipe.psd1') -ErrorAction Stop
+		$ServerClientParams = ConvertFrom-Serial -Text $SerialData
+		# Restore the CLIENT's function-trace settings BEFORE the consumer module loads (2026-09-16) -
+		# see Start-PipeSession.ps1's own comment on why $env: inheritance alone cannot be trusted
+		# across a -Verb RunAs elevation boundary. Deliberately unconditional (no "if already set"
+		# guard): a genuinely non-elevated spawn already inherited the right values, so overwriting
+		# them with the SAME values here is a harmless no-op; only the elevated case, where
+		# inheritance silently failed, actually needs this to do anything.
+		if ($ServerClientParams.FunctionTraceEnabled)
+		{ $env:MyFunctionTraceEnabled = $ServerClientParams.FunctionTraceEnabled }
+		if ($ServerClientParams.FunctionTraceSessionId)
+		{ $env:MyFunctionTraceSessionId = $ServerClientParams.FunctionTraceSessionId }
+		# Import the consumer module (e.g. VHD). NamedPipe is already loaded above; importing
+		# VHD (which RequiredModules NamedPipe) or NamedPipe again are both no-ops for NamedPipe.
+		# Prefer full path import (works even when $PSModulePath excludes network/OneDrive drives).
+		$Private:mtl = $ServerClientParams.ModuleToLoad
+		if ($Private:mtl.Path -and (Test-Path -Path $Private:mtl.Path))
+		{ Import-Module -Name $Private:mtl.Path -ErrorAction Stop }
+		else
+		{ Import-Module -Name $Private:mtl.Name -RequiredVersion $Private:mtl.Version -ErrorAction Stop }
+		# InfoDisplay bitmask: 1=server/client progress, 2=Show-VerboseData, 4=debug output
+		if ($ServerClientParams.$StrInfoDisplay -band 4)
+		{
+			Write-Host -Object ('DEBUG SPAWN: Server process started, PS version = {0}' -f $PSVersionTable.PSVersion) -ForegroundColor Yellow
+			Write-Host -Object ('DEBUG SPAWN: Imported {0} v{1}' -f $ServerClientParams.ModuleToLoad.Name, $ServerClientParams.ModuleToLoad.version) -ForegroundColor Green
+		}
+		if ($ServerClientParams.$StrInfoDisplay -band 2)
+		{
+			Show-VerboseData -Object $ServerClientParams -Display -Title 'ServerClientParams'
+			Show-VerboseData -Object $ServerClientParams.$StrModuleToLoad -Display -Title 'Module to load in Spawned process'
+		}
 
-	$ServerClientParams.$StrSpawned = $True
-	# Call via NamedPipe module scope because Start-PipeServerOrClient is internal (not exported)
-	# Always use 'NamedPipe' here regardless of $ModuleName - the function lives in NamedPipe's scope
-	# Match by path: find the NamedPipe module whose ModuleBase contains this script file.
-	# This correctly identifies the owning version even when a newer NamedPipe version is
-	# simultaneously loaded (e.g. profile auto-imports v0.5, consumer module imports v0.7).
-	$Private:module = Get-Module -Name NamedPipe | Where-Object { $PSScriptRoot -like "$($_.ModuleBase)\*" } | Select-Object -First 1
-	if (-not $Private:module)
-	{
-		# Fallback: highest loaded version (shouldn't be reached in normal operation)
-		$Private:module = Get-Module -Name NamedPipe | Sort-Object -Property Version -Descending | Select-Object -First 1
+		$ServerClientParams.$StrSpawned = $True
+		# Call via NamedPipe module scope because Start-PipeServerOrClient is internal (not exported)
+		# Always use 'NamedPipe' here regardless of $ModuleName - the function lives in NamedPipe's scope
+		# Match by path: find the NamedPipe module whose ModuleBase contains this script file.
+		# This correctly identifies the owning version even when a newer NamedPipe version is
+		# simultaneously loaded (e.g. profile auto-imports v0.5, consumer module imports v0.7).
+		$Private:module = Get-Module -Name NamedPipe | Where-Object { $PSScriptRoot -like "$($_.ModuleBase)\*" } | Select-Object -First 1
+		if (-not $Private:module)
+		{
+			# Fallback: highest loaded version (shouldn't be reached in normal operation)
+			$Private:module = Get-Module -Name NamedPipe | Sort-Object -Property Version -Descending | Select-Object -First 1
+		}
+		$Private:module.Invoke({
+				param($data)
+				Start-PipeServerOrClient -SerialData $data
+			}, (ConvertTo-Serial -Object $ServerClientParams))
 	}
-	$Private:module.Invoke({
-			param($data)
-			Start-PipeServerOrClient -SerialData $data
-		}, (ConvertTo-Serial -Object $ServerClientParams))
+	Catch
+	{
+		Try
+		{
+			$Private:EvLog = [System.Diagnostics.EventLog]::new('Application')
+			$Private:EvLog.Source = 'NamedPipe'
+			$Private:EvLog.WriteEntry(('NamedPipe spawned-server bootstrap failed (PID {0}): {1}' -f $PID, $_.Exception.Message), [System.Diagnostics.EventLogEntryType]::Error, 4504)
+			$Private:EvLog.Dispose()
+		}
+		Catch { Write-Error -ErrorRecord $_ }
+		# This whole bootstrap block runs BEFORE the actual pipe is created (module import, deserialize
+		# ServerClientParams, resolve the consumer module) - there is no pipe yet for this re-throw to
+		# collapse. It ends the spawned process outright, which is why the Event Log write above exists:
+		# with no pipe yet, there is no $DataObject/$StrError channel to report through either.
+		throw
+	}
 }
 Function Start-PipeServerOrClient
 {
@@ -111,6 +149,8 @@ Function Start-PipeServerOrClient
 		[String]$SerialData
 	)
 
+	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
 	$ServerClientParams = ConvertFrom-Serial -Text $SerialData
 	$DataObject = Set-ObjectParameterSet -Dataset 'DataObject' -MyParameters $Private:MyBoundParameters
@@ -162,6 +202,10 @@ Function Start-PipeServerOrClient
 			}
 			Catch
 			{
+				# This is the CLIENT spawning a new elevated/non-elevated server process - runs before
+				# any pipe connection exists (the server process, once launched, creates its own pipe
+				# separately). A throw here means the server never got launched at all; it cannot
+				# collapse a pipe that was never created.
 				throw ('Failed to start server process: {0}' -f $_.Exception.Message)
 			}
 		}
@@ -372,6 +416,8 @@ Function Start-PipeServerOrClient
 							[Parameter(Mandatory,HelpMessage = 'Provide the HealthCts')]
 							$HealthCts
 						)
+						If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
 						# Send STOP poison pill to unblock WaitForConnection in the health runspace.
 						# The health pipe ACL includes the server identity so this works even when elevated.
 						try

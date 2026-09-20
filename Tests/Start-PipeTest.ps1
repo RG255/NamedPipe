@@ -30,10 +30,10 @@ Param (
 )
 
 Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-# Use the DEPLOYED 0.14 by name+version. Loading source by path timed out because the spawned
-# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.14
+# Use the DEPLOYED 0.15 by name+version. Loading source by path timed out because the spawned
+# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.15
 # (side-by-side) and re-deploy after each source change before testing.
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.14
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.15
 function Invoke-RequiredActions
 {
 	<#
