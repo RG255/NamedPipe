@@ -60,6 +60,18 @@ coverage for `RedactPotentialSecrets`, when a test built the natural way (mirror
 with defaults matching what the Server/Client case already falls back to, so all four now round-trip
 through `MyOptions` identically regardless of which of the two supported paths a caller uses.
 
+### Added (2026-09-21) - protecting the function-trace log folder
+
+- **`Protect-MyFunctionTraceFolder`** (exported; `-Check` reports without elevation, `-WhatIf` supported).
+  The trace folder under `<ProgramData>\FunctionTrace` inherited ProgramData's defaults, which let every local
+  user read every log. Run elevated, this gives SYSTEM/Administrators full control, lets users list the folder
+  and add a file (not read others' files), and lets each user keep writing to their own logs; an elevated
+  server running as an administrator can still write to the log its client created. Existing logs are reset.
+- **`Enable-MyFunctionTrace` warns once** when the folder is not locked down, naming the command above. It never
+  blocks tracing; `$env:MyFunctionTraceNoAclWarning = '1'` silences it.
+- Fixed the ACL grant design along the way: a plain "list" right is not enough to open a directory - the
+  folder needs read+execute (`RX`, not inherited) so users can list it and rename/archive their own logs.
+
 ### Removed (2026-09-20) - leftovers of the retired breakpoint-list facility
 
 The breakpoint functions were removed earlier (see the 2026-09-17 cleanup below); this removes what they

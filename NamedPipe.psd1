@@ -29,7 +29,7 @@
 	# Linux/macOS). Keep in sync with the runtime export set (Tests assert this).
 	FunctionsToExport = @(
 		'Assert-File', 'Assert-Folder', 'ConvertFrom-Serial', 'ConvertTo-ParameterSet',
-		'ConvertTo-Serial', 'Clear-MyCatchAuditLog', 'Clear-MyFunctionTraceLog', 'Clear-MyCatchAuditArchive', 'Clear-MyFunctionTraceArchive', 'Disable-MyCatchAudit', 'Disable-MyFunctionTrace',
+		'ConvertTo-Serial', 'Clear-MyCatchAuditLog', 'Clear-MyFunctionTraceLog', 'Clear-MyCatchAuditArchive', 'Clear-MyFunctionTraceArchive', 'Protect-MyFunctionTraceFolder','Disable-MyCatchAudit', 'Disable-MyFunctionTrace',
 		'Enable-MyCatchAudit', 'Enable-MyFunctionTrace', 'Exit-Pipe',
 		'Format-MyTextLine', 'Get-ChunkBufferStatus', 'Get-MyCatchAuditLog',
 		'Get-MyError', 'Get-PipeServerLog', 'Invoke-MyCatchAuditTriage', 'Register-PipeEventSource',

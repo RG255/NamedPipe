@@ -878,11 +878,26 @@ tracing at once do not interleave. `Enable-MyFunctionTrace -NewSession` starts a
 window. `Clear-MyFunctionTraceLog` archives the current window's file (the session id stays in the archive
 name), and `Clear-MyFunctionTraceArchive` prunes old archives and session files by age.
 
-**Security caveat - the trace log is not protected.** The folder and file are created with whatever
-default permissions `C:\ProgramData` gives, with no explicit ACL. On a machine used by more than one
-account, another local user may be able to read what is traced (paths, program names, timing, refusal
-reasons such as a required group name). Treat anything traced with the same sensitivity as console
-output, not as a private record. Hardening the file permissions is a known follow-up, not done yet.
+**Security caveat - lock the trace folder down on a shared machine.** The module creates the folder with
+whatever default permissions `C:\ProgramData` gives, and those let every local user READ every log in it.
+Traced text can include paths, program names, timing and refusal reasons such as a required group name, so
+on a machine used by more than one account, lock it down once from an elevated prompt:
+
+```powershell
+Protect-MyFunctionTraceFolder            # apply (elevated); add -WhatIf to preview
+Protect-MyFunctionTraceFolder -Check     # report only - works without elevation
+```
+
+That gives SYSTEM and Administrators full control, lets ordinary users list the folder and add a file but
+not read anyone else's, and lets each user keep writing to (and archiving) their own logs; existing logs are
+reset so they inherit the new ACL. An elevated pipe server running as an administrator can still write to the
+log its non-elevated client created, so the shared client/server log keeps working. Other users can still see
+the log file NAMES (session ids and times), not their contents.
+
+`Enable-MyFunctionTrace` prints one warning when it finds the folder is not locked down, naming this command;
+it never blocks tracing. Set `$env:MyFunctionTraceNoAclWarning = '1'` to silence it (for example on a
+single-user machine). Whatever the permissions, treat anything traced with the same sensitivity as console
+output, not as a private record.
 
 ## Server diagnostics log
 

@@ -1793,6 +1793,34 @@ Describe 'Function trace facility - per-session file, -Detail, -SkipFrames' -Tag
 			Test-Path -LiteralPath $Expected | Should -BeTrue
 		}
 
+		It 'warns (once, on the warning stream) when the trace folder is not locked down, and still prints exactly one line' {
+			$Saved = $env:MyFunctionTraceNoAclWarning
+			$env:MyFunctionTraceNoAclWarning = $null
+			$env:MyFunctionTraceSessionId = 'pester03'
+			Try
+			{
+				$Out = @(Enable-MyFunctionTrace -Option 2 -WarningVariable Warn -WarningAction SilentlyContinue)
+			}
+			Finally { $env:MyFunctionTraceNoAclWarning = $Saved }
+			$Out.Count | Should -Be 1
+			@($Warn).Count | Should -Be 1
+			($Warn | Out-String) | Should -Match 'readable by every local user'
+			($Warn | Out-String) | Should -Match 'Protect-MyFunctionTraceFolder'
+		}
+
+		It 'stays quiet about the folder when $env:MyFunctionTraceNoAclWarning is set' {
+			$Saved = $env:MyFunctionTraceNoAclWarning
+			$env:MyFunctionTraceNoAclWarning = '1'
+			$env:MyFunctionTraceSessionId = 'pester04'
+			Try
+			{
+				$Out = @(Enable-MyFunctionTrace -Option 2 -WarningVariable Warn -WarningAction SilentlyContinue)
+			}
+			Finally { $env:MyFunctionTraceNoAclWarning = $Saved }
+			$Out.Count | Should -Be 1
+			@($Warn).Count | Should -Be 0
+		}
+
 		It 'reuses the session id on a second call and only changes it with -NewSession' {
 			$env:MyFunctionTraceSessionId = $null
 			$null = Enable-MyFunctionTrace -Option 1
