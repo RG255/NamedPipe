@@ -130,7 +130,7 @@ try
 							Scope = $Variables[$VarSet][$Item].Scope
 						}
 						If ($Params.Scope -inotmatch $VOConstant)
-						{Remove-Variable @Params -Force}
+						{Remove-Variable @Params -Force -WhatIf:$false}
 					}
 					$Params = @{
 						Name   = $Item
@@ -138,7 +138,21 @@ try
 						Option = $Variables[$VarSet][$Item].Option
 						Scope  = $Variables[$VarSet][$Item].Scope
 					}
-					New-Variable @Params -ErrorAction Stop
+					# -WhatIf:$false on BOTH this and the Remove-Variable above (2026-09-27 fix, found live).
+					# New-Variable and Remove-Variable both honour ShouldProcess, so they inherit
+					# $WhatIfPreference - and $WhatIfPreference is set for the WHOLE SCOPE, including
+					# everything downstream, as soon as any caller runs a SupportsShouldProcess script with
+					# -WhatIf. A consumer doing exactly that (a consumer script run with -WhatIf) got a
+					# module that IMPORTED BUT DID NOT INITIALISE: every variable was skipped ("What if:
+					# Performing the operation 'New variable'"), then Export-ModuleMember threw on each
+					# missing one ("Variable:[X] Failed to create Value: [Y]"), and the caller finally died
+					# on 'Write-MyCatchAudit is not recognized' - a half-loaded module masquerading as a
+					# missing function.
+					#
+					# Creating a module's OWN internal variables at import time is not a user-visible state
+					# change that -WhatIf should ever preview. An import must never become a no-op just
+					# because the caller is previewing something else.
+					New-Variable @Params -ErrorAction Stop -WhatIf:$false
 					Export-ModuleMember -Variable $Item -ErrorAction Stop
 					If ($VInfoOn)
 					{

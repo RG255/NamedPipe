@@ -174,7 +174,15 @@ Function Start-PipeServerOrClient
 			If (-not $Administrator -and $ServerClientParams.AdminRequired)
 			{$ProcessVerb = 'RunAs'}
 			$ServerClientParams.$StrAdminRequired = $False
-			$Private:npModule     = Get-Module -Name NamedPipe | Sort-Object -Property Version -Descending | Select-Object -First 1
+			# Loaded-first, -ListAvailable fallback - same shape as a consumer's own NamedPipe
+			# lookup (61-63). Without the fallback, a caller whose module auto-load path leaves NamedPipe
+			# not yet resolvable via a loaded-only Get-Module lookup gets $null here, and Join-Path's own
+			# -Path parameter (literally named 'Path') then throws "Cannot bind argument to parameter
+			# 'Path' because it is null." - confirmed live 2026-09-24 via a real consumer run
+			# from a fresh, non-elevated pwsh session with no explicit prior Import-Module.
+			$Private:npModule = Get-Module -Name 'NamedPipe' -ErrorAction SilentlyContinue | Sort-Object -Property Version -Descending | Select-Object -First 1
+			if ($null -eq $Private:npModule)
+			{ $Private:npModule = Get-Module -Name 'NamedPipe' -ListAvailable -ErrorAction SilentlyContinue | Sort-Object -Property Version -Descending | Select-Object -First 1 }
 			$Private:ServerScript = Join-Path $Private:npModule.ModuleBase 'FunctionsWindows\Start-PipeServerOrClient.ps1'
 			# Launch the server with -File and the script path DOUBLE-QUOTED inside a single argument
 			# string, so a module path containing a space (e.g. under C:\Program Files\...) is passed
@@ -198,7 +206,19 @@ Function Start-PipeServerOrClient
 			# Start the Server
 			Try
 			{
-				(Start-Process @ProcessInfo).Id
+				# -WhatIf:$false (2026-09-27 fix, found live). Start-Process honours ShouldProcess, so it
+				# inherits $WhatIfPreference - which is set for the WHOLE SCOPE, including everything
+				# downstream, the moment any caller runs a SupportsShouldProcess script with -WhatIf. A
+				# consumer doing that (a script run with -WhatIf) got "What if: Performing
+				# the operation Start-Process ..." instead of a server: the pipe session silently never
+				# came up, so nothing the script wanted to PREVIEW could even be reached.
+				#
+				# Spawning the elevated helper process is INFRASTRUCTURE - the prerequisite for doing any
+				# work at all - not the state change a caller is previewing. A -WhatIf run still needs a
+				# working session to report what it WOULD do; refusing to start one turns a preview into
+				# an outright failure. The caller's own ShouldProcess gates remain in force for the
+				# operations that actually mutate something.
+				(Start-Process @ProcessInfo -WhatIf:$false).Id
 			}
 			Catch
 			{

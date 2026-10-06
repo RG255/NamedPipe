@@ -32,8 +32,11 @@
     request, result, error, parameters, and process identity information.
 
     .PARAMETER NoExitOnError
-    When specified, displays errors but continues execution instead of calling
-    Exit-Pipe to close the connection.
+    When specified, Send-Request also writes a server-side error's text to the
+    information stream (shown on the console) as the response arrives. It never
+    closes the connection either way: the DataObject, with its Error property, is
+    always returned to the caller, who decides what to do. Leave it off when the
+    caller reports the error itself, or the same text is shown twice.
 
     .EXAMPLE
     $SendRequestParams.DataObject = 'Get-Process | Select-Object -First 5' |

@@ -54,7 +54,11 @@
 
 	If ($DataObject.$StrServerPID -eq $PID)
 	{
-		# This is executed for the server
+		# This is executed for the server, sending its RESPONSE back to the client. Request/
+		# Parameters/Data are rotated to Last* and cleared because they were only ever inputs to
+		# THIS request, now fulfilled. .Error is deliberately left untouched here - Get-SBResult
+		# may have just set it to report a genuine failure, and this is the one hop that failure
+		# has to reach the client on; clearing it here would silently erase every error result.
 		$DataObject.$StrFromServerOrClient = $StrServer
 		$DataObject.$StrLastRequest = $DataObject.$StrRequest
 		$DataObject.$StrLastParameters = $DataObject.$StrParameters
@@ -64,7 +68,14 @@
 	}
 	else
 	{
-		# This is executed for the client
+		# This is executed for the client, sending a new REQUEST to the server. .Error (and
+		# .Result) are cleared here, not just Request/Parameters/Data, because this DataObject is
+		# commonly reused across multiple dispatches on the same session (see the lazy-create-
+		# and-reuse pattern in Docs\UsingFromScripts.md) - without this, a prior call's genuine failure would
+		# still be sitting in .Error when a LATER, successful call returns, since nothing on the
+		# success path ever resets it. This is why consumer code does not need to null .Error
+		# before each Send-Request call - it already happens here, once, in the one place that
+		# covers every caller.
 		$DataObject.$StrFromServerOrClient = $StrClient
 		$DataObject.$StrLastRequest = $Null
 		$DataObject.$StrLastParameters = $Null

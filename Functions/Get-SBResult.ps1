@@ -69,6 +69,10 @@
 	# long-lived and this preference is GLOBAL - leaking 'Stop' into it would change the
 	# behaviour of every later request, and of the server's own teardown code.
 	$Private:GlobalEapSave = $global:ErrorActionPreference
+	# How many records $Error held when THIS request started. The server is long-lived, so $Error can hold
+	# records left by earlier work; the Catch below uses this to report only what this request added (see there).
+	# Counting reads nothing back and clears nothing - unlike the two reverted 2026-08-08 experiments noted below.
+	$Private:ErrorCountBefore = [Int]$global:Error.Count
 
 	Try
 	{
@@ -331,7 +335,12 @@
 	Catch
 	{
 		$ErrorActionPreference = $Private:ErrorActionPreferenceSave
-		$DataObject.$StrError = NamedPipe\Get-MyError -Return
+		# Report the records THIS request added (at least the one that just failed, at most Get-MyError's own
+		# default of 10) rather than every record left in $Error by earlier work. If $Error was cleared during
+		# the request the count went down, so everything now in it is new.
+		$Private:ErrorCountNow = [Int]$global:Error.Count
+		$Private:NewErrorCount = If ($Private:ErrorCountNow -ge $Private:ErrorCountBefore) { $Private:ErrorCountNow - $Private:ErrorCountBefore } Else { $Private:ErrorCountNow }
+		$DataObject.$StrError = NamedPipe\Get-MyError -Return -MaxErrors ([Math]::Min(10, [Math]::Max(1, $Private:NewErrorCount)))
 	}
 	Finally
 	{

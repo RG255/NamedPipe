@@ -40,4 +40,6 @@ Import-Module NamedPipe -RequiredVersion 0.15
 
 ## Documentation
 
-See [USERGUIDE.md](USERGUIDE.md) for full usage, architecture, and integration examples.
+See [USERGUIDE.md](USERGUIDE.md) for full usage, architecture, and integration examples, and
+[Docs/UsingFromScripts.md](Docs/UsingFromScripts.md) for a short guide to the session patterns and pitfalls when
+calling NamedPipe from your own scripts.

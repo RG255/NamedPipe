@@ -2,6 +2,17 @@
 
 ## Version 0.15 - 2026-09-19 (branched 2026-09-19)
 
+### Fixed (2026-10-06, in place - no version bump)
+
+- **`Get-MyError` reported the wrong records** (shared utility, vendored here from CommonScripts). When `$Error` held more
+  than `-MaxErrors` records (default 10) it formatted the OLDEST ones while its own note said "most recent". It now reports
+  the newest `-MaxErrors`, oldest of those first, so a failure reaches the reader instead of old unrelated history.
+- **A failed pipe request reports only its own failure.** `Get-SBResult` now sizes the error report to the records that
+  request added (at least the failing one, at most 10) instead of everything a long-lived server had accumulated.
+- **Documentation:** `NoExitOnError` is described correctly (it only controls whether `Send-Request` also echoes the error
+  to the console; it has never closed the connection). New `Docs\UsingFromScripts.md`; the user guide is brought up to
+  date (title, the v0.14 renames, the exported-function table).
+
 ### Changed - deliberate behavior change, not silent
 
 `Get-SBResult.ps1`'s built-in (`RedactPattern` bit 1) redaction of the `[Server] Executing:` console

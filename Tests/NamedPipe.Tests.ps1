@@ -521,6 +521,35 @@ Describe 'Get-MyError' {
 			{ Get-MyError -Return -LinePad 10 } | Should -Throw
 		}
 	}
+
+	# Regression (2026-10-06): with more than -MaxErrors records in $Error the function reported the OLDEST ones
+	# while its own note said "most recent" - a long-lived server then reported old, unrelated errors instead of
+	# the one that had just failed.
+	Context 'MaxErrors keeps the newest records' {
+		It 'shows the newest MaxErrors records, not the oldest, and says how many were omitted' {
+			1..15 | ForEach-Object { try { throw ('ProbeError{0:00}' -f $_) } catch { $null = $_ } }
+			$Result = Get-MyError -Return -PreserveErrors -MaxErrors 3
+			$Result | Should -Match 'ProbeError15'
+			$Result | Should -Match 'ProbeError13'
+			$Result | Should -Not -Match 'ProbeError01'
+			$Result | Should -Not -Match 'ProbeError12'
+			$Result | Should -Match 'Showing the 3 most recent of 15'
+		}
+
+		It 'lists the records oldest-first within the ones it shows (chronological)' {
+			1..5 | ForEach-Object { try { throw ('OrderError{0:00}' -f $_) } catch { $null = $_ } }
+			$Result = Get-MyError -Return -PreserveErrors -MaxErrors 3
+			$Result.IndexOf('OrderError03') | Should -BeLessThan $Result.IndexOf('OrderError05')
+		}
+
+		It 'shows every record, with no omission note, when there are no more than MaxErrors' {
+			1..3 | ForEach-Object { try { throw ('FewError{0:00}' -f $_) } catch { $null = $_ } }
+			$Result = Get-MyError -Return -PreserveErrors -MaxErrors 10
+			$Result | Should -Match 'FewError01'
+			$Result | Should -Match 'FewError03'
+			$Result | Should -Not -Match 'most recent of'
+		}
+	}
 }
 
 Describe 'Format-MyTextLine' {
@@ -1544,6 +1573,37 @@ Describe 'Get-SBResult - Data channel' -Tag 'DataChannel' {
 		$SB = [ScriptBlock]::Create('$Data')
 		$Closure = $SB.GetNewClosure()
 		$Closure.InvokeReturnAsIs() | Should -Be 'plain local is captured correctly'
+	}
+}
+
+Describe 'Get-SBResult - error report is limited to what this request added' -Tag 'ErrorReport' {
+	# A long-lived server's $Error can hold records from earlier work. A failed request must report ITS OWN failure,
+	# not dump that history (2026-10-06).
+	BeforeAll {
+		$Private:Body = '& (Get-Module NamedPipe) ([scriptblock]::Create(''Get-SBResult @args'')) @args'
+		Set-Item -Path 'function:script:Get-SBResult' -Value ([scriptblock]::Create($Private:Body))
+		function Global:Test-FreshFailure { throw 'FreshFailureMarker' }
+	}
+
+	AfterAll {
+		Remove-Item function:Global:Test-FreshFailure -ErrorAction SilentlyContinue
+		$Global:Error.Clear()
+	}
+
+	BeforeEach {
+		$Global:Error.Clear()
+	}
+
+	It 'reports the failing request and not the stale records already in $Error' {
+		1..6 | ForEach-Object { try { throw ('StaleMarker{0}' -f $_) } catch { $null = $_ } }
+		$Result = Get-SBResult -DataObject @{ Request = 'Test-FreshFailure' }
+		$Result.Error | Should -Match 'FreshFailureMarker'
+		$Result.Error | Should -Not -Match 'StaleMarker'
+	}
+
+	It 'still reports the failure when $Error held nothing beforehand' {
+		$Result = Get-SBResult -DataObject @{ Request = 'Test-FreshFailure' }
+		$Result.Error | Should -Match 'FreshFailureMarker'
 	}
 }
 

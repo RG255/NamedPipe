@@ -1,4 +1,7 @@
-﻿# NamedPipe Module v0.13 - User Guide
+﻿# NamedPipe Module v0.15 - User Guide
+
+For a short, practical guide to the session patterns and pitfalls when calling NamedPipe from your own scripts, see
+[Docs/UsingFromScripts.md](Docs/UsingFromScripts.md). This guide is the full reference.
 
 <!-- CONTRIBUTOR NOTE: Do NOT use em-dashes in this file. Use a regular hyphen (-) only.
      Em-dashes cause PowerShell parser errors in string literals and may be silently
@@ -19,7 +22,7 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 - **Consumer module tracking** - spawned server automatically imports consumer modules
 - Cross-version support (PowerShell 5.1 and PowerShell 7+)
 
-**Self-contained:** All required functions (ConvertTo-Serial, ConvertFrom-Serial, Get-MyError, Show-VerboseData, Set-Window, etc.) are included within the NamedPipe module itself - no external dependencies.
+**Self-contained:** All required functions (ConvertTo-Serial, ConvertFrom-Serial, Get-MyError, Show-VerboseData, etc.) are included within the NamedPipe module itself - no external dependencies.
 
 ### What's New in v0.4
 
@@ -58,15 +61,12 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 | `ModuleToLoad.Path` | `ModuleToLoad` now accepts an optional `Path` field containing the full path to the consumer module's `.psd1` file. When present, the spawned server imports by path rather than by name+version. This is required when the module lives on a network or OneDrive drive (`L:\`, etc.) that is not in `$PSModulePath` in the elevated spawned process. |
 | Spawn path fix | `Start-PipeServerOrClient` now uses `Get-Module -Name NamedPipe \| Sort-Object Version -Descending \| Select-Object -First 1` to locate its own script file when building the spawned server command line. This replaces the previous `$MyInvocation`-based approach and is robust when multiple NamedPipe versions are simultaneously loaded in the session. |
 
-### What's New in v0.10 (injection hardening - BUILT, TESTED, DEPLOYED)
+### What's New in v0.10 (injection hardening)
 
-The mechanism below is complete and has shipped in every version since 0.10 (every version since is on
-the hardened transport line). It remains fully **opt-in per
-session**: as of 2026-08-14 no consumer has actually set `RequestPolicy`, so behaviour is IDENTICAL to
-0.9 for everyone today unless you opt in to the option below yourself. (The planning doc's Section 9
-records why adoption is not currently recommended for any consumer here - the request policy itself
-works exactly as documented, but proving an `AllowedCommands` list is complete enough to trust is a much
-higher bar than it first appears.)
+The mechanism below has shipped in every version since 0.10. It is fully **opt-in per session**: unless you set
+`RequestPolicy` yourself, behaviour is IDENTICAL to 0.9. The request policy works exactly as documented, but proving
+that an `AllowedCommands` list is complete enough to trust is a much higher bar than it first appears, so adopt it
+only where you can test that list thoroughly.
 
 | Feature | Description |
 |---------|-------------|
@@ -181,6 +181,22 @@ one process whose identity it has just confirmed.
 
 See **Session Hand-off** below for the full flow. Everything else is unchanged from v0.11, and consumers that
 do not use the hand-off are entirely unaffected.
+
+### What's New in v0.14 (function renames - breaking)
+
+v0.14 is a PSScriptAnalyzer cleanup. Plural-noun function names were renamed to singular with **no back-compat
+aliases**, so any script that called the old names must be updated:
+
+| Old name | New name |
+|----------|----------|
+| `ConvertTo-Parameters` | `ConvertTo-ParameterSet` |
+| `Set-ObjectParams` | `Set-ObjectParameterSet` |
+| `Get-MyErrors` | `Get-MyError` |
+
+Internal-only renames (not exported): `Test-UserOrGroupExists` is now `Test-AccessIdentifier`, `Initialize-Folders` is now
+`Initialize-Folder`, `Publish-Variables` is now `Publish-Variable`, and `Invoke-InitFunctions` is now `Invoke-InitFunction`.
+The `Initialize-BPList` / `Set-Breakpoint` / `Remove-Breakpoint` facility was removed; use PowerShell's own
+`Enter-PSHostProcess` / `Debug-Runspace` instead (see "Debugging the server side" below). See CHANGELOG.md for detail.
 
 ### What's New in v0.15 (RedactPotentialSecrets - what it actually is, and what it is not)
 
@@ -613,7 +629,7 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 | `WindowStyle` | String | Minimized | Server window style: Normal, Minimized, Maximized, Hidden |
 | `ChunkSize` | Int | 32768 | Chunk size in characters for large data transfers |
 | `Depth` | Int | 2 | Serialization depth for nested objects |
-| `NoExitOnError` | Bool | $False | Keep server window open when errors occur |
+| `NoExitOnError` | Bool | $False | Also echo a server-side error's text to the console when the response arrives (it never closes the connection either way - see "Error Handling") |
 | `Verbose` | Bool | $False | Enable verbose output |
 | `ServerWaitTimeout` | Int | 60 | Seconds the server waits for a client connection |
 | `ClientConnectTimeout` | Int | 10000 | Milliseconds the client waits to connect to the server |
@@ -1012,7 +1028,11 @@ else
 
 ### NoExitOnError
 
-By default, errors cause `Exit-Pipe` to close the connection. Use `-NoExitOnError` to continue:
+A server-side error never closes the connection: `Send-Request` always returns the DataObject with its `Error` property
+set, and the caller decides what to do. `NoExitOnError` only controls whether `Send-Request` ALSO writes the error text to
+the information stream (the console) as the response arrives. Leave it off when your own code reports the error, or the
+same text is shown twice. The text itself is `Get-MyError`'s report of the records that request added (the failing one at
+least, at most the 10 newest), not the server's whole error history.
 
 ```powershell
 # Via Options hashtable
@@ -1198,11 +1218,21 @@ These are exported and available to consumers:
 | `Show-VerboseData` | Displays formatted debug output |
 | `Get-MyError` | Formats error information for diagnostics |
 | `Write-MyLog` | Logging utility |
-| `Set-Window` | Manipulates window position, size, and state |
 | `Exit-Pipe` | Gracefully closes pipe on error conditions |
 | `Assert-File` | File assertion utility |
 | `Assert-Folder` | Folder assertion utility |
 | `Send-ProgressInfo` | Sends progress messages from server to client |
+| `Get-ChunkBufferStatus` | Returns the status of pending chunk transfers |
+| `Test-Base64String` | Tests whether a string is structurally valid base64 (used by the `RedactPotentialSecrets` check) |
+| `Get-PipeServerLog` / `Show-PipeServerLog` | Find / print the server diagnostics log (see "Server diagnostics log") |
+| `Register-PipeEventSource` | Registers the 'NamedPipe' Windows Event Log source (requires administrator) |
+| `Enable-MyFunctionTrace` / `Disable-MyFunctionTrace` | Turn function-call tracing on / off (see "Function tracing") |
+| `Clear-MyFunctionTraceLog` / `Clear-MyFunctionTraceArchive` | Archive the function-trace log and start a fresh one / prune old archives |
+| `Protect-MyFunctionTraceFolder` | Lock down the function-trace log folder; `-Check` reports whether it is locked down |
+| `Enable-MyCatchAudit` / `Disable-MyCatchAudit` | Turn the live console echo of caught errors on / off (capture is always on) |
+| `Get-MyCatchAuditLog` / `Show-MyCatchAuditSummary` | Read / summarise caught errors, for this process or the persisted log |
+| `Invoke-MyCatchAuditTriage` | Interactively review the persisted catch-audit log and remove only the entries you resolve |
+| `Clear-MyCatchAuditLog` / `Clear-MyCatchAuditArchive` | Archive the persisted catch-audit log and start a fresh one / prune old archives |
 
 ### Internal Functions (Not Exported)
 These are used internally by the module and are not available to consumers:
@@ -1216,7 +1246,9 @@ These are used internally by the module and are not available to consumers:
 | `Set-PipeSecurity` | Creates pipe access control rules |
 | `Test-AccessIdentifier` | Validates access identifier strings |
 | `Get-NewPipeName` | Generates unique pipe names |
+| `Set-Window` / `Set-MyWindowState` | Window position, size and state helpers (vendored; used on the server side) |
 | `Publish-SetWindowCode` | Compiles Win32 P/Invoke code |
+| `Test-RequestPolicy` | Decides whether a request may run, using the default-deny allowlist of the opt-in `RequestPolicy` option |
 
 ### Exporting All Functions for Testing
 
@@ -1265,7 +1297,7 @@ nothing to be added to a request to enable it.
 
 ### Server window closes immediately
 **Cause**: Error during startup or connection.
-**Solution**: Run with `-Wait` and `-NoExitOnError` to keep the server window open so you can see error messages.
+**Solution**: Run with `-Wait` to keep the server window open so you can see error messages.
 
 ### Connection timeout
 **Cause**: Server not ready when client tries to connect, or pipe name mismatch.
