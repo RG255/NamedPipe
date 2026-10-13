@@ -83,7 +83,14 @@
 		$PipeInfo,
 		[Parameter(Mandatory,HelpMessage = 'Please supply the Data Object')]
 		$DataObject,
-		[Switch]$NoExitOnError
+		[Switch]$NoExitOnError,
+		[ValidateRange(0, 86400)]
+		[Int]$TimeoutSeconds = 0,
+		[ValidateRange(0, 86400)]
+		[Int]$MaxRuntimeSeconds = 0,
+		[ValidateRange(1, 600)]
+		[Int]$CancelGraceSeconds = 5,
+		[Switch]$NoKillOnTimeout
 	)
 	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
 
@@ -102,32 +109,61 @@
 		}
 	}
 
-	$DataObject = Send-Data -DataObject $DataObject -PipeInfo $PipeInfo
-	do
+	# 0.16 timeouts (both 0 = unbounded, the historic behaviour). Armed on PipeInfo for THIS call only; Receive-Data
+	# enforces them per read and Resolve-PipeRequestTimeout escalates (CANCEL, then KILL) when one expires.
+	$Private:RequestObject = $DataObject
+	$Private:Timed = ($TimeoutSeconds -gt 0 -or $MaxRuntimeSeconds -gt 0)
+	If ($Private:Timed)
 	{
-		If ($Private:ProgressInfo)
-		{$DataObject = Receive-Data -PipeInfo $PipeInfo -ErrorAction Stop}
-		$Private:ProgressInfo = $False
-		if ($DataObject.$Strerror)
+		$PipeInfo.$StrReadTimeoutMs = [int]($TimeoutSeconds * 1000)
+		$PipeInfo.$StrDeadlineTicks = If ($MaxRuntimeSeconds -gt 0) { [DateTime]::UtcNow.AddSeconds($MaxRuntimeSeconds).Ticks } Else { [long]0 }
+		$PipeInfo.$StrTimedOut      = $null
+	}
+	Try
+	{
+		$DataObject = Send-Data -DataObject $DataObject -PipeInfo $PipeInfo
+		do
 		{
-			If ($NoExitOnError)
-			{Write-Information -MessageData $DataObject.Error -InformationAction Continue}
-			# Always return DataObject with error to caller - never auto-exit the pipe.
-			# Callers check $DataObject.$StrError and decide what to do (rollback, Stop-PipeSession, etc.)
-		}
-		If ($DataObject.$StrProgressInfo)
-		{
-			$Private:ProgressInfo = $True
-			Switch ($DataObject.$StrType)
+			If ($Private:ProgressInfo)
+			{$DataObject = Receive-Data -PipeInfo $PipeInfo -ErrorAction Stop}
+			# A timed read expired (on the first read inside Send-Data, or on a later one): CANCEL, wait, then KILL
+			# unless -NoKillOnTimeout. A honoured cancel returns the server's own Cancelled response and the session
+			# stays open for the caller to decide; otherwise the original request object comes back with Error set.
+			If ($PipeInfo.$StrTimedOut)
 			{
-				$StrConsole
-				{Write-Information -MessageData ('{0}' -f $DataObject.$StrProgressInfo) -InformationAction Continue}
-				$StrConsoleStop
-				{Write-Information -MessageData ('{0}' -f $DataObject.$StrProgressInfo) -InformationAction stop}
+				$DataObject = Resolve-PipeRequestTimeout -PipeInfo $PipeInfo -RequestObject $Private:RequestObject -Reason $PipeInfo.$StrTimedOut -GraceSeconds $CancelGraceSeconds -NoKill:$NoKillOnTimeout
+			}
+			$Private:ProgressInfo = $False
+			if ($DataObject.$Strerror)
+			{
+				If ($NoExitOnError)
+				{Write-Information -MessageData $DataObject.Error -InformationAction Continue}
+				# Always return DataObject with error to caller - never auto-exit the pipe.
+				# Callers check $DataObject.$StrError and decide what to do (rollback, Stop-PipeSession, etc.)
+			}
+			If ($DataObject.$StrProgressInfo)
+			{
+				$Private:ProgressInfo = $True
+				Switch ($DataObject.$StrType)
+				{
+					$StrConsole
+					{Write-Information -MessageData ('{0}' -f $DataObject.$StrProgressInfo) -InformationAction Continue}
+					$StrConsoleStop
+					{Write-Information -MessageData ('{0}' -f $DataObject.$StrProgressInfo) -InformationAction stop}
+				}
 			}
 		}
+		while ($Private:ProgressInfo)
 	}
-	while ($Private:ProgressInfo)
+	Finally
+	{
+		If ($Private:Timed)
+		{
+			$PipeInfo.$StrReadTimeoutMs = 0
+			$PipeInfo.$StrDeadlineTicks = [long]0
+			$PipeInfo.$StrTimedOut      = $null
+		}
+	}
 	# Rotate completed request to Last* fields so stale data doesn't confuse debugging
 	$DataObject.$StrLastRequest    = $DataObject.$StrRequest
 	$DataObject.$StrLastParameters = $DataObject.$StrParameters

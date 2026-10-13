@@ -73,6 +73,8 @@
 	# records left by earlier work; the Catch below uses this to report only what this request added (see there).
 	# Counting reads nothing back and clears nothing - unlike the two reverted 2026-08-08 experiments noted below.
 	$Private:ErrorCountBefore = [Int]$global:Error.Count
+	# 0.16: set when a CANCEL command stopped this request (see the nested-pipeline block below).
+	$Private:WasCancelled = $false
 
 	Try
 	{
@@ -308,7 +310,94 @@
 		# report it. That is the point of the change.
 		$ErrorActionPreference        = 'Stop'
 		$global:ErrorActionPreference = 'Stop'
-		$DataObject.$StrResult = $Private:SB.InvokeReturnAsIs()
+		$Private:ReqState = $Script:PipeRequestState
+		If ($Private:ReqState)
+		{
+			# 0.16: run the request as a NESTED pipeline in this same runspace (same session state, same module
+			# scope, same global preferences) so the health runspace can stop it with BeginStop() on a CANCEL
+			# command. Measured 2026-10-12 (PS 5.1 and 7.6): a stopped busy loop / Start-Sleep / native exe
+			# unblocks in ~10 ms and the server serves the next request; code blocked in console input
+			# (Read-Host, pause, [Console]::ReadKey) is NOT interruptible and needs the KILL escalation.
+			#
+			# The wrapper text is deliberate:
+			#   '& $sb' (not $sb.InvokeReturnAsIs()) - calling InvokeReturnAsIs inside the nested pipeline doubled
+			#       the $Error records per failed request (+4 vs +2), so error reports listed each failure twice;
+			#   ',$r' - without the leading comma an array result unrolls into the pipeline and loses its shape.
+			# With both, scalar/string/array/empty/$null results matched inline InvokeReturnAsIs exactly.
+			# Do NOT call the synchronous Stop() on this object from anywhere - see the health listener.
+			$Private:NestedPs = [System.Management.Automation.PowerShell]::Create('CurrentRunspace')
+			Try
+			{
+				$null = $Private:NestedPs.AddScript('param($sb) $r = & $sb; ,$r').AddArgument($Private:SB)
+				$Private:ReqState.Sequence        = [int]$Private:ReqState.Sequence + 1
+				$Private:ReqState.Id              = $Private:ReqState.Sequence
+				$Private:ReqState.StartTicks      = [DateTime]::UtcNow.Ticks
+				$Private:ReqState.CancelRequested = $false
+				# Ps is published LAST: the health runspace treats a non-null Ps as "a request is running".
+				$Private:ReqState.Ps              = $Private:NestedPs
+				$Private:NestedOut = $Private:NestedPs.Invoke()
+				# A stopped nested pipeline returns NORMALLY with empty output and no exception, so a cancelled
+				# request would otherwise look exactly like one that returned $null. Check explicitly.
+				If ($Private:ReqState.CancelRequested -or $Private:NestedPs.InvocationStateInfo.State -eq [System.Management.Automation.PSInvocationState]::Stopped)
+				{
+					$DataObject.$StrResult    = $null
+					$DataObject.$StrError     = 'Request cancelled by the client (timeout or cancel command). The server session is still open.'
+					$DataObject.$StrCancelled = $true
+					Add-ServerLogEntry -Message ('request {0} cancelled by client' -f $Private:ReqState.Id)
+				}
+				ElseIf ($Private:NestedOut.Count -ge 1)
+				{
+					$Private:NestedVal = $Private:NestedOut[0]
+					$DataObject.$StrResult = $null
+					If ($null -ne $Private:NestedVal)
+					{
+						# Unwrap the PSObject the output collection puts around every item - BUT NOT when the wrapper
+						# IS the object. A [PSCustomObject]'s properties live on the wrapper (its BaseObject is an empty
+						# marker), and so do note properties added by Add-Member or by a cmdlet. Taking BaseObject
+						# unconditionally dropped every property of a single returned custom object: found by VHDTools
+						# on its first real mount, 2026-10-13 (Get-VHDPartition came back with no DiskNumber).
+						# Keeping the wrapper matches what InvokeReturnAsIs handed back inline.
+						$Private:NestedBase = $Private:NestedVal.PSObject.BaseObject
+						$Private:KeepWrapper = ($Private:NestedBase -is [System.Management.Automation.PSCustomObject])
+						If (-not $Private:KeepWrapper)
+						{
+							ForEach ($Private:NestedMember in $Private:NestedVal.PSObject.Members)
+							{
+								# Judge by member TYPE, not IsInstance: on a wrapper the adapted .NET members (every string method, every
+								# array property) report IsInstance = $true too, which kept the wrapper for EVERYTHING and made a
+								# one-element array collapse to a scalar and an empty array to $null (measured against 0.15,
+								# 2026-10-13). Only note / script / alias / code members are genuinely carried by the wrapper.
+								If ($Private:NestedMember.MemberType -in 'NoteProperty', 'ScriptProperty', 'AliasProperty', 'CodeProperty', 'PropertySet', 'ScriptMethod', 'CodeMethod')
+								{ $Private:KeepWrapper = $true; Break }
+							}
+						}
+						# STATEMENT form on purpose: '$x = If (...) { $a } Else { $b }' sends the value through the pipeline, which
+						# unrolls an array - a one-element array became a scalar and an empty array became $null (measured
+						# against 0.15, 2026-10-13). A plain assignment keeps the object exactly as it is.
+						If ($Private:KeepWrapper) { $DataObject.$StrResult = $Private:NestedVal }
+						Else { $DataObject.$StrResult = $Private:NestedBase }
+					}
+				}
+				Else
+				{ $DataObject.$StrResult = $null }
+			}
+			Finally
+			{
+				# Clear the published state BEFORE disposing, so a late CANCEL cannot reach a disposed object.
+				$Private:ReqState.Ps = $null
+				$Private:ReqState.Id = 0
+				# Latch the flag for this function's own Catch (an Invoke() that THROWS after a cancel), then reset it
+				# so a stale value can never mark a later request as cancelled.
+				$Private:WasCancelled = [bool]$Private:ReqState.CancelRequested
+				$Private:ReqState.CancelRequested = $false
+				$Private:NestedPs.Dispose()
+			}
+		}
+		Else
+		{
+			# Not inside a pipe server (for example Get-SBResult -Command used directly): run inline as before.
+			$DataObject.$StrResult = $Private:SB.InvokeReturnAsIs()
+		}
 
 		# Defensive: raw CIM/WMI objects do not round-trip through PSSerializer reliably
 		# and can hang Send-Data indefinitely. Surface as a clear error instead of a hang
@@ -341,6 +430,7 @@
 		$Private:ErrorCountNow = [Int]$global:Error.Count
 		$Private:NewErrorCount = If ($Private:ErrorCountNow -ge $Private:ErrorCountBefore) { $Private:ErrorCountNow - $Private:ErrorCountBefore } Else { $Private:ErrorCountNow }
 		$DataObject.$StrError = NamedPipe\Get-MyError -Return -MaxErrors ([Math]::Min(10, [Math]::Max(1, $Private:NewErrorCount)))
+		If ($Private:WasCancelled) { $DataObject.$StrCancelled = $true }
 	}
 	Finally
 	{

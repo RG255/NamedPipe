@@ -51,7 +51,42 @@
 		{
 			Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Receive-Data: About to ReadLine (blocking)..." -ForegroundColor Cyan
 		}
-		$line = $PipeInfo.$StrReader.ReadLine()
+		# 0.16: TIMED mode. Send-Request sets ReadTimeoutMs (inactivity, restarted by every message) and/or
+		# DeadlineTicks (absolute, progress does not extend it) on PipeInfo for the duration of one call. With
+		# neither set - the server, and every existing client - this is the historic blocking ReadLine().
+		# When a timed read expires the ReadLineAsync task is KEPT in PipeInfo.PendingRead and the next call
+		# resumes THAT task: the server's eventual response (for example the Cancelled one after a CANCEL) is
+		# then read exactly once, and a second overlapping read on the reader is never started.
+		$Private:IdleMs      = [int]$PipeInfo.$StrReadTimeoutMs
+		$Private:DeadlineTks = [long]$PipeInfo.$StrDeadlineTicks
+		$Private:ReadTask    = $PipeInfo.$StrPendingRead
+		if ($Private:IdleMs -gt 0 -or $Private:DeadlineTks -gt 0 -or $null -ne $Private:ReadTask)
+		{
+			if ($null -ne $Private:ReadTask) { $PipeInfo.$StrPendingRead = $null }
+			else { $Private:ReadTask = $PipeInfo.$StrReader.ReadLineAsync() }
+			$Private:WaitMs = -1
+			$Private:Why    = 'Inactivity'
+			if ($Private:IdleMs -gt 0) { $Private:WaitMs = $Private:IdleMs }
+			if ($Private:DeadlineTks -gt 0)
+			{
+				$Private:RemainingMs = [int][Math]::Max(0, [Math]::Min([double][int]::MaxValue, ($Private:DeadlineTks - [DateTime]::UtcNow.Ticks) / 10000))
+				if ($Private:WaitMs -lt 0 -or $Private:RemainingMs -le $Private:WaitMs)
+				{ $Private:WaitMs = $Private:RemainingMs; $Private:Why = 'MaxRuntime' }
+			}
+			if ($Private:ReadTask.Wait($Private:WaitMs))
+			{ $line = $Private:ReadTask.Result }
+			else
+			{
+				$PipeInfo.$StrPendingRead = $Private:ReadTask
+				$PipeInfo.$StrTimedOut    = $Private:Why
+				return [Ordered]@{
+					$StrError = ('Receive-Data: no response from the server ({0}, waited {1} ms).' -f $Private:Why, $Private:WaitMs)
+					$StrType  = $null
+				}
+			}
+		}
+		else
+		{ $line = $PipeInfo.$StrReader.ReadLine() }
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
 			Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Receive-Data: ReadLine returned, length=$($line.Length)" -ForegroundColor Cyan

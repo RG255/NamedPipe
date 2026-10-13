@@ -15,7 +15,7 @@
 #>
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.15 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.16 -ErrorAction Stop
 
 Write-Host '--- Part 1: bit-1 alone MISSES a short secret ---' -ForegroundColor Cyan
 $Session1 = Start-PipeSession -MyParameters @{} -Options @{ $StrInfoDisplay = 1 }

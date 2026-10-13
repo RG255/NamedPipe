@@ -118,6 +118,25 @@ result of the scriptblock comes back in `$StrResult`. Errors come back in `$StrE
 - **Stamps and other caller state.** Embed the value by string-formatting it into the command before sending, e.g.
   `$cmd = ('$stamp = "{0}"; ...' -f $Script:Stamp)`.
 
+## Requests that might hang - give them a timeout (0.16+)
+
+By default `Send-Request` waits for ever. For anything that could loop or block, say how long you are prepared to wait:
+
+```powershell
+$SendRequestParams.$StrDataObject = $Command | Send-Request @SendRequestParams -TimeoutSeconds 60 -MaxRuntimeSeconds 1800
+$r = $SendRequestParams.$StrDataObject
+if ($r.$StrCancelled)      { <# stopped; the session is still open #> }
+elseif ($r.$StrTimedOut)   { <# server was terminated; open a new session #> }
+```
+
+- `-TimeoutSeconds` is an inactivity limit: each `Send-ProgressInfo` message restarts it. `-MaxRuntimeSeconds` is the
+  absolute cap that progress cannot extend. Use both for a long job that reports progress.
+- A cancel keeps the session; a request that cannot be cancelled gets the server killed (use `-NoKillOnTimeout` to
+  decide yourself). Either way the work is **abandoned, not rolled back** - keep destructive steps repeatable.
+- From another runspace, `Get-PipeRequestStatus`, `Stop-PipeRequest` and `Stop-PipeServer` work on the same
+  `PipeInfo`, including against an elevated server from a non-elevated caller.
+- A server started with `Wait` stays open for `WaitSeconds` (default 300), not for ever.
+
 ## Common pitfalls
 
 - **`$PipeOptions[$StrModuleToLoad]` from a consumer module's scope.** The exported `$Str*` variables are `$null` in PS7

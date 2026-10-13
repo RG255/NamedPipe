@@ -26,7 +26,7 @@
 #>
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.15 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.16 -ErrorAction Stop
 
 # -InfoDisplay 1 = server/client progress echo, so the (redacted) request text prints to the console.
 # No RedactPattern option is configured anywhere below - deliberately, to prove this needs no config

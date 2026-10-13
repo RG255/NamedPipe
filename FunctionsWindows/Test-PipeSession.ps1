@@ -46,6 +46,9 @@
 	)
 	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
 
+	# 0.16: tolerate the whole ServerClientParams being passed (a consumer did, and a silent $false hid it).
+	$PipeInfo = Resolve-PipeInfo -InputObject $PipeInfo
+
 	# Phase 1: passive object check
 	try
 	{

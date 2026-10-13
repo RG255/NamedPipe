@@ -27,15 +27,15 @@ write to, which matters because this module can start elevated processes):
 
 ```powershell
 # PowerShell 7
-git clone https://github.com/RG255/NamedPipe "C:\Program Files\PowerShell\Modules\NamedPipe\0.15"
+git clone https://github.com/RG255/NamedPipe "C:\Program Files\PowerShell\Modules\NamedPipe\0.16"
 # Windows PowerShell 5.1
-git clone https://github.com/RG255/NamedPipe "C:\Program Files\WindowsPowerShell\Modules\NamedPipe\0.15"
+git clone https://github.com/RG255/NamedPipe "C:\Program Files\WindowsPowerShell\Modules\NamedPipe\0.16"
 ```
 
 Then import:
 
 ```powershell
-Import-Module NamedPipe -RequiredVersion 0.15
+Import-Module NamedPipe -RequiredVersion 0.16
 ```
 
 ## Documentation

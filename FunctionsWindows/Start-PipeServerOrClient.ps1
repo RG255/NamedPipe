@@ -192,7 +192,7 @@ Function Start-PipeServerOrClient
 			#   * an ARRAY -ArgumentList : Windows PowerShell 5.1 Start-Process -Verb (ShellExecute) does
 			#     not quote array elements, it just space-joins them, so the path splits again.
 			# With -File the path is a discrete parameter value, so the double quotes survive.
-			$Private:ServerArgs = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Spawned -SerialData {1}' -f $Private:ServerScript, (ConvertTo-Serial -Object $ServerClientParams)
+			$Private:ServerArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Spawned -SerialData {1}' -f $Private:ServerScript, (ConvertTo-Serial -Object $ServerClientParams)
 			$ProcessInfo = @{
 				FilePath     = $Executable
 				Passthru     = $True
@@ -218,7 +218,12 @@ Function Start-PipeServerOrClient
 				# working session to report what it WOULD do; refusing to start one turns a preview into
 				# an outright failure. The caller's own ShouldProcess gates remain in force for the
 				# operations that actually mutate something.
-				(Start-Process @ProcessInfo -WhatIf:$false).Id
+				# 0.16: was 'Start-Process @ProcessInfo -WhatIf:$false', which throws "A parameter cannot be found that matches
+				# parameter name 'WhatIf'" on Windows PowerShell 5.1 (Start-Process is not ShouldProcess-aware there, only in
+				# PS7) - so a 5.1 client could not spawn a server at all. A local $WhatIfPreference reaches the same
+				# commands in both hosts and is harmless where Start-Process ignores it; it is local to this call.
+				$WhatIfPreference = $false
+				(Start-Process @ProcessInfo).Id
 			}
 			Catch
 			{
@@ -488,6 +493,23 @@ Function Start-PipeServerOrClient
 					# the runspace. WaitForConnection() is synchronous and cannot be interrupted
 					# by CancellationToken in .NET Framework, so the poison pill is the only
 					# reliable way to unblock it.
+					# 0.16: request state shared between the main runspace (Get-SBResult sets Ps/Id/StartTicks around each
+					# request) and the health runspace (STATUS/CANCEL read it). Synchronized hashtable: both sides touch it.
+					# Created once per server process; the re-listen loop reuses it. The command token is derived from the
+					# session nonce; no nonce means commands are disabled (every command answers DENIED).
+					If (-not $Script:PipeRequestState)
+					{
+						$Script:PipeRequestState = [hashtable]::Synchronized(@{
+								Ps              = $null
+								Id              = 0
+								Sequence        = 0
+								StartTicks      = [long]0
+								CancelRequested = $false
+								DeniedCount     = 0
+								PipeInfo        = $ServerClientParams.$StrPipeInfo
+							})
+					}
+					$Private:CommandToken = Get-PipeCommandToken -Nonce ([string]$ServerClientParams.$StrNonce)
 					$HealthPipeName = $ServerClientParams.$StrPipeInfo.$StrName + '.Health'
 					# Include server identity so Stop-HealthPipe can connect back even when elevated
 					$Private:HealthAccess = @($ServerClientParams.$StrAccessIdentifier) + @('{0}:Allow:ReadWrite' -f [Security.Principal.WindowsIdentity]::GetCurrent().Name)
@@ -503,7 +525,23 @@ Function Start-PipeServerOrClient
 					$HealthPS = [PowerShell]::Create()
 					$HealthPS.Runspace = $HealthRunspace
 					$null = $HealthPS.AddScript({
-							param($hpn, $acc, $psVer, $Cts, $CatchHelperPath, $PersistPath)
+							param($hpn, $acc, $psVer, $Cts, $CatchHelperPath, $PersistPath, $State, $CmdToken)
+							# 0.16: audit trail for the destructive commands. Plain .NET Event Log write (no module
+							# functions exist in this bare runspace); the 'NamedPipe' source is registered by the
+							# elevated server / Deploy-Modules, and a missing source must never break the listener.
+							function Write-HealthEvent([int]$EventId, [string]$Text)
+							{
+								# SILENT-OK: audit write is best-effort; there is no other channel in this bare runspace
+								# and the command being audited must still be honoured.
+								try
+								{
+									$ev = [System.Diagnostics.EventLog]::new('Application')
+									$ev.Source = 'NamedPipe'
+									$ev.WriteEntry($Text, [System.Diagnostics.EventLogEntryType]::Warning, $EventId)
+									$ev.Dispose()
+								}
+								catch { $null = $_ }
+							}
 							# 2026-09-11: dot-source the cross-runspace-safe catch-audit helper into THIS
 							# runspace - Write-MyCatchAudit itself is not loaded here and could not capture
 							# anywhere useful even if it were (see Write-HealthPipeCatchRecord.ps1's own
@@ -611,6 +649,73 @@ Function Start-PipeServerOrClient
 									{
 										$hWriter.WriteLine('PONG:' + $msg.Substring(5))
 									}
+									elseif ($msg -and $State -and $msg -match '^(STATUS|CANCEL|KILL):')
+									{
+										# 0.16 command channel. Wire form: <CMD>:<64-hex command token>[:<request id>].
+										# Runs here, in the health runspace, so it still answers while the main runspace is
+										# wedged inside a request. Every command is authenticated with the command token
+										# (derived from the session nonce); a wrong or absent token is refused and counted.
+										$cmdParts = $msg.Split(':')
+										$cmdName  = $cmdParts[0]
+										$cmdTok   = if ($cmdParts.Count -gt 1) { [string]$cmdParts[1] } else { '' }
+										$cmdArg   = if ($cmdParts.Count -gt 2) { [string]$cmdParts[2] } else { '' }
+										$tokOk = $false
+										if ($CmdToken -and $cmdTok.Length -eq $CmdToken.Length)
+										{
+											# Constant-time compare: no early exit on the first differing character.
+											$diff = 0
+											for ($ci = 0; $ci -lt $CmdToken.Length; $ci++)
+											{ $diff = $diff -bor ([int]$cmdTok[$ci] -bxor [int]$CmdToken[$ci]) }
+											$tokOk = ($diff -eq 0)
+										}
+										if (-not $tokOk)
+										{
+											$State.DeniedCount = [int]$State.DeniedCount + 1
+											Write-HealthEvent 4513 ('NamedPipe health pipe (PID {0}): {1} command REFUSED - wrong or missing command token (refusal #{2}).' -f $PID, $cmdName, $State.DeniedCount)
+											$hWriter.WriteLine('DENIED')
+										}
+										elseif ($cmdName -eq 'STATUS')
+										{
+											if ($State.Ps)
+											{
+												$elapsed = [long](([DateTime]::UtcNow.Ticks - [long]$State.StartTicks) / 10000)
+												$hWriter.WriteLine(('STATUS:busy;id={0};elapsedMs={1}' -f $State.Id, $elapsed))
+											}
+											else { $hWriter.WriteLine('STATUS:idle') }
+										}
+										elseif ($cmdName -eq 'CANCEL')
+										{
+											$wantId = 0
+											if ($cmdArg) { [void][int]::TryParse($cmdArg, [ref]$wantId) }
+											$cancelPs = $State.Ps
+											if (-not $cancelPs -or ($wantId -ne 0 -and $wantId -ne [int]$State.Id))
+											{ $hWriter.WriteLine('CANCEL:none') }
+											else
+											{
+												$State.CancelRequested = $true
+												Write-HealthEvent 4511 ('NamedPipe health pipe (PID {0}): CANCEL accepted for request {1}.' -f $PID, $State.Id)
+												$cancelReply = 'CANCEL:pending'
+												try
+												{
+													# BeginStop, never the synchronous Stop(): on a request blocked in console
+													# input the synchronous call would hang THIS runspace and take the whole
+													# command channel down with it.
+													$stopAr = $cancelPs.BeginStop($null, $null)
+													if ($stopAr.AsyncWaitHandle.WaitOne(3000)) { $cancelReply = 'CANCEL:stopped' }
+												}
+												catch { $cancelReply = 'CANCEL:none' }
+												$hWriter.WriteLine($cancelReply)
+											}
+										}
+										elseif ($cmdName -eq 'KILL')
+										{
+											Write-HealthEvent 4512 ('NamedPipe health pipe (PID {0}): KILL accepted - terminating this server process.' -f $PID)
+											try { $hWriter.WriteLine('KILL:ok') }
+											# The writer is AutoFlush, so WriteLine has already flushed. The kill below is in a Finally so it happens even
+											# if the acknowledgement cannot be written (client already gone): an authenticated KILL must never be lost.
+											finally { [System.Diagnostics.Process]::GetCurrentProcess().Kill() }
+										}
+									}
 								}
 								catch
 								{
@@ -630,7 +735,7 @@ Function Start-PipeServerOrClient
 									}
 								}
 							}
-						}).AddArgument($HealthPipeName).AddArgument($Private:HealthAccess).AddArgument($PSVersionTable.PSVersion.Major).AddArgument($HealthCts).AddArgument($Private:HealthCatchHelperPath).AddArgument($Private:HealthPersistPath)
+						}).AddArgument($HealthPipeName).AddArgument($Private:HealthAccess).AddArgument($PSVersionTable.PSVersion.Major).AddArgument($HealthCts).AddArgument($Private:HealthCatchHelperPath).AddArgument($Private:HealthPersistPath).AddArgument($Script:PipeRequestState).AddArgument($Private:CommandToken)
 					$null = $HealthPS.BeginInvoke()
 					# === End health pipe listener ===
 
@@ -787,7 +892,7 @@ Function Start-PipeServerOrClient
 				If ($ServerClientParams.Wait)
 				{
 					$null = Set-MyWindowState -ProcessId $DataObject.$StrServerPID -State Restore
-					Pause
+					Wait-PipeServerExit -Seconds $ServerClientParams.$StrWaitSeconds
 				}
 			}
 			Catch
@@ -812,7 +917,7 @@ Function Start-PipeServerOrClient
 
 				Write-Host "Pipe Server crashed: $Private:ErrorMsg" -ForegroundColor Red
 				Write-Host "(Use path-redacted stack trace - check logs for details)" -ForegroundColor DarkGray
-				If ($ServerClientParams.Wait) { Pause }
+				If ($ServerClientParams.Wait) { Wait-PipeServerExit -Seconds $ServerClientParams.$StrWaitSeconds }
 			}
 			Finally
 			{
@@ -896,6 +1001,9 @@ Function Start-PipeServerOrClient
 				}
 				ElseIf ($ServerClientParams.$StrNonce)
 				{$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($ServerClientParams.$StrNonce)}
+				# 0.16: derive the health-pipe command token (STATUS/CANCEL/KILL) for this session. One-way from the
+				# nonce, so PipeInfo can carry it without exposing the nonce itself (see Get-PipeCommandToken).
+				$ServerClientParams.$StrPipeInfo.$StrCommandToken = Get-PipeCommandToken -Nonce ([string]$ServerClientParams.$StrNonce)
 				If ($ServerClientParams.$StrInfoDisplay -band 4)
 				{Write-Host 'DEBUG CLIENT: StreamReader/Writer created successfully' -ForegroundColor Green}
 			}

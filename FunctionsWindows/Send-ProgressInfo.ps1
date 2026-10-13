@@ -54,7 +54,12 @@
 	# discarded (this function's own .OUTPUTS says "None"), so a failed progress send vanished
 	# silently. Now checked and audited - a lost progress ping is low-stakes, but per the user's own
 	# stated principle, an error must always be caught SOMEWHERE, even if only to make it trackable.
-	$Private:dataObject = Send-Data -DataObject $Private:dataObject -PipeInfo $ServerClientParams.$StrPipeInfo -ErrorAction Stop
+	# 0.16: requests now run in a nested pipeline, so the dynamic-scope lookup of $ServerClientParams may no longer
+	# reach the server loop's variable; fall back to the PipeInfo the server published in its request state.
+	$Private:ProgressPipeInfo = $ServerClientParams.$StrPipeInfo
+	If (-not $Private:ProgressPipeInfo -and $Script:PipeRequestState)
+	{ $Private:ProgressPipeInfo = $Script:PipeRequestState.PipeInfo }
+	$Private:dataObject = Send-Data -DataObject $Private:dataObject -PipeInfo $Private:ProgressPipeInfo -ErrorAction Stop
 	If ($Private:dataObject.$StrError)
 	{
 		Write-MyCatchAudit -Source 'Send-ProgressInfo: Send-Data reported an error sending a progress message - the progress update was not delivered' -ErrorRecord (

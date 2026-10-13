@@ -25,15 +25,17 @@ Param (
 	[ValidateRange(1, [Int32]::MaxValue)]
 	$ClientConnectTimeout=10000,
 	[Parameter(HelpMessage = '0.10: turn ON the request allowlist. Allows only Set-Window + Write-Host (what this harness uses) and DEMOnstrates blocked requests.')]
-	[Switch]$DemoPolicy
+	[Switch]$DemoPolicy,
+	[Parameter(HelpMessage = '0.16: skip the command-channel section (timeouts, cancel, status, NonInteractive). It takes about 20 seconds.')]
+	[Switch]$SkipCommandChannel
 
 )
 
 Remove-Module -name NamedPipe -force -ErrorAction SilentlyContinue
-# Use the DEPLOYED 0.15 by name+version. Loading source by path timed out because the spawned
-# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.15
+# Use the DEPLOYED 0.16 by name+version. Loading source by path timed out because the spawned
+# SERVER process re-resolves the module and the source dev folder is not on PSModulePath. Deploy 0.16
 # (side-by-side) and re-deploy after each source change before testing.
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.15
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.16
 function Invoke-RequiredActions
 {
 	<#
@@ -130,6 +132,79 @@ function Invoke-RequiredActions
 		$SendRequestParams.$StrDataObject = '$ExecutionContext.SessionState.LanguageMode = "FullLanguage"' | Send-Request @SendRequestParams
 		Write-Host ("[Policy] BLOCKED (LanguageMode flip)  -> Error: [{0}]" -f $SendRequestParams.$StrDataObject.$StrError) -ForegroundColor Yellow
 	}
+
+	# ===== 0.16 COMMAND-CHANNEL SECTION (status, timeout + cancel, progress, NonInteractive) =====
+	# Runs on the pristine session BEFORE the re-listen / hand-off tests replace the connection. Skipped with
+	# -SkipCommandChannel, or when a RequestPolicy is active (it would refuse these requests). KILL is deliberately
+	# not exercised here because it would end the harness; Tests\Test-RequestTimeout.ps1 and Examples\08 cover it.
+	if ($SkipCommandChannel -or $ServerClientParams.RequestPolicy)
+	{ Write-Host "`n[0.16] command-channel section skipped (-SkipCommandChannel, or a RequestPolicy is active)." -ForegroundColor DarkGray }
+	else
+	{
+		Write-Host "`n[0.16] Command channel: status, timeout + cancel, progress, NonInteractive" -ForegroundColor Cyan
+		$Private:CcPass = $true
+		$Private:CcShow = {
+			param([string]$Label, [bool]$Ok, [string]$Detail)
+			$colour = if ($Ok) { 'Green' } else { 'Red' }
+			Write-Host ('[0.16] {0,-5} {1}{2}' -f $(if ($Ok) { 'PASS' } else { 'FAIL' }), $Label, $(if ($Detail) { ' - ' + $Detail } else { '' })) -ForegroundColor $colour
+		}
+		$SendRequestParams.$StrType = $StrScriptBlock
+
+		# 1. status while idle
+		$Private:CcStatus = Get-PipeRequestStatus -PipeInfo $ServerClientParams.$StrPipeInfo
+		$Private:CcOk = ($Private:CcStatus.State -eq 'Idle')
+		& $Private:CcShow 'STATUS while idle' $Private:CcOk $Private:CcStatus.Reply
+		if (-not $Private:CcOk) { $Private:CcPass = $false }
+
+		# 2. inactivity timeout -> cancelled, session survives
+		$Private:CcWatch = [Diagnostics.Stopwatch]::StartNew()
+		$SendRequestParams.$StrDataObject = 'Start-Sleep -Seconds 60' | Send-Request @SendRequestParams -TimeoutSeconds 3
+		$Private:CcWatch.Stop()
+		$Private:CcOk = ($SendRequestParams.$StrDataObject.$StrCancelled -eq $true -and $Private:CcWatch.Elapsed.TotalSeconds -lt 15)
+		& $Private:CcShow '-TimeoutSeconds 3 cancels a 60 s sleep' $Private:CcOk ('{0:N1} s' -f $Private:CcWatch.Elapsed.TotalSeconds)
+		if (-not $Private:CcOk) { $Private:CcPass = $false }
+
+		# 3. the same session serves the next request
+		$SendRequestParams.$StrDataObject = 'Write-Output cc-alive' | Send-Request @SendRequestParams
+		$Private:CcOk = ($SendRequestParams.$StrDataObject.$StrResult -eq 'cc-alive')
+		& $Private:CcShow 'session still usable after the cancel' $Private:CcOk
+		if (-not $Private:CcOk) { $Private:CcPass = $false }
+
+		# 4. progress messages keep a busy request alive past the inactivity timeout
+		$Private:CcWork = "1..5 | ForEach-Object { Send-ProgressInfo -String ('cc tick {0}' -f `$_) -Type Console; Start-Sleep -Seconds 1 }`n'cc-finished'"
+		$Private:CcWatch.Restart()
+		$SendRequestParams.$StrDataObject = $Private:CcWork | Send-Request @SendRequestParams -TimeoutSeconds 3
+		$Private:CcWatch.Stop()
+		$Private:CcOk = ($SendRequestParams.$StrDataObject.$StrResult -eq 'cc-finished' -and $Private:CcWatch.Elapsed.TotalSeconds -gt 4)
+		& $Private:CcShow 'progress resets the inactivity timer' $Private:CcOk ('{0:N1} s with a 3 s timeout' -f $Private:CcWatch.Elapsed.TotalSeconds)
+		if (-not $Private:CcOk) { $Private:CcPass = $false }
+
+		# 5. an absolute cap that progress cannot extend
+		$Private:CcWatch.Restart()
+		$SendRequestParams.$StrDataObject = $Private:CcWork.Replace('1..5', '1..30') | Send-Request @SendRequestParams -TimeoutSeconds 3 -MaxRuntimeSeconds 4
+		$Private:CcWatch.Stop()
+		$Private:CcOk = ($SendRequestParams.$StrDataObject.$StrCancelled -eq $true -and $Private:CcWatch.Elapsed.TotalSeconds -lt 15)
+		& $Private:CcShow '-MaxRuntimeSeconds 4 stops a request that keeps reporting' $Private:CcOk ('{0:N1} s' -f $Private:CcWatch.Elapsed.TotalSeconds)
+		if (-not $Private:CcOk) { $Private:CcPass = $false }
+
+		# 6. -NonInteractive: console prompts fail fast instead of wedging the server
+		$Private:CcWatch.Restart()
+		$SendRequestParams.$StrDataObject = 'Read-Host -Prompt "x"' | Send-Request @SendRequestParams
+		$Private:CcWatch.Stop()
+		$Private:CcOk = ($SendRequestParams.$StrDataObject.$StrError -match 'NonInteractive' -and $Private:CcWatch.Elapsed.TotalSeconds -lt 10)
+		& $Private:CcShow 'Read-Host fails fast (server is -NonInteractive)' $Private:CcOk ('{0:N1} s' -f $Private:CcWatch.Elapsed.TotalSeconds)
+		if (-not $Private:CcOk) { $Private:CcPass = $false }
+
+		# 7. forgiving argument: the whole ServerClientParams where PipeInfo is expected
+		$Private:CcOk = [bool](Test-PipeSession -PipeInfo $ServerClientParams)
+		& $Private:CcShow 'Test-PipeSession accepts a whole ServerClientParams' $Private:CcOk
+		if (-not $Private:CcOk) { $Private:CcPass = $false }
+
+		$SendRequestParams.$StrType = $StrScriptBlock
+		if ($Private:CcPass) { Write-Host '[0.16] command-channel section PASSED.' -ForegroundColor Green }
+		else { Write-Host '[0.16] command-channel section had FAILURES - see above.' -ForegroundColor Red }
+	}
+	# ===== END 0.16 COMMAND-CHANNEL SECTION =====
 
 	# ===== RE-LISTEN TEST =====
 	# Send a clean Disconnect request. The server handles $StrDisconnect in the Switch,

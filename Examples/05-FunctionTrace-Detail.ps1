@@ -15,7 +15,7 @@
 #>
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.15 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.16 -ErrorAction Stop
 
 Write-Host 'Turning on function tracing (Option 3 = ordinary tracing + Get-SBResult request detail)...' -ForegroundColor Cyan
 Enable-MyFunctionTrace -Option 3

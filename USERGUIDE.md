@@ -1,4 +1,4 @@
-﻿# NamedPipe Module v0.15 - User Guide
+﻿# NamedPipe Module v0.16 - User Guide
 
 For a short, practical guide to the session patterns and pitfalls when calling NamedPipe from your own scripts, see
 [Docs/UsingFromScripts.md](Docs/UsingFromScripts.md). This guide is the full reference.
@@ -211,6 +211,60 @@ a real design mistake made and caught while building this (an earlier version fr
 punctuation and flagged ordinary words like a 20-character parameter name), why the fix tests whole
 quoted values instead of loose fragments, and - most importantly - why this can only ever detect "is
 this shaped like base64," never "is this actually a secret."
+
+### What's New in v0.16 (recovering a stuck request: timeouts, cancel, kill)
+
+Before 0.16 a request that looped, or blocked on console input in a hidden (often elevated) server window, left the
+caller waiting for ever, and a non-elevated client could not even `Stop-Process` the elevated server. 0.16 adds a way
+out that works from the non-elevated client.
+
+| Feature | Description |
+|---------|-------------|
+| `Send-Request -TimeoutSeconds N` | **Inactivity** timeout: the longest wait for the next message from the server. Every progress message (`Send-ProgressInfo`) restarts it, so a request that reports progress is never timed out by this alone. 0 (default) = unbounded, exactly as before. |
+| `Send-Request -MaxRuntimeSeconds N` | **Absolute** cap on the whole request. Progress does NOT extend it - this is the one that stops a request that keeps reporting progress for ever. 0 (default) = none. |
+| `-CancelGraceSeconds N` | After a timeout the client sends CANCEL and waits this long (default 5) for the server's answer before escalating. |
+| `-NoKillOnTimeout` | Do not escalate to KILL. If the cancel is not honoured the request object comes back with `TimedOut = 'CancelNotHonoured'` and the server left running, so the caller can inspect it and call `Stop-PipeServer`. |
+| `Get-PipeRequestStatus` | `Idle` / `Busy` (with request id and elapsed ms) / `Refused` / `Unreachable`. Safe to call while a `Send-Request` is blocked. |
+| `Stop-PipeRequest` | CANCEL the running request; the session stays open. |
+| `Stop-PipeServer` | KILL the server process at once. The session is lost. |
+| `Stop-PipeSession -Force` | Terminate the server through the health pipe when the normal ExitPipe cannot be delivered. |
+| Server runs `-NonInteractive` | `Read-Host` and `pause` inside a request now fail immediately with an ordinary error instead of wedging the server. |
+| Bounded `Wait` | The `Wait` option no longer uses an unbounded `Pause`: the window stays open for `WaitSeconds` (default 300, 1..3600) or until a key is pressed. |
+| Forgiving `PipeInfo` argument | `Test-PipeSession`, `Stop-PipeSession` and the three new commands accept the whole `ServerClientParams` as well as its `PipeInfo`; previously a wrong object gave a silent `$false` and a leaked server. |
+| Windows PowerShell 5.1 fix | 0.15 and earlier could not start a server from a 5.1 client (`Start-Process -WhatIf` does not exist there). Fixed. |
+
+**What happens on a timeout**
+
+1. The client sends CANCEL on the server's health pipe (authenticated; see below).
+2. If the request can be interrupted - a busy loop, `Start-Sleep`, a native program - the server stops it and answers
+   normally with `Cancelled = $true` and an explanatory `Error`. **The session stays open**; you decide whether to
+   reuse it, retry or call `Stop-PipeSession`.
+3. If it cannot (code blocked in raw console input such as `[Console]::ReadKey`), no answer arrives within
+   `CancelGraceSeconds` and the client escalates to KILL: the server process ends, `TimedOut = 'ServerKilled'`, and the
+   session must be reopened. With `-NoKillOnTimeout` it stops at step 2's failure instead.
+
+```powershell
+$SendRequestParams.$StrType = $StrScriptBlock
+$SendRequestParams.$StrDataObject = 'Invoke-LongThing' | Send-Request @SendRequestParams -TimeoutSeconds 60 -MaxRuntimeSeconds 1800
+$r = $SendRequestParams.$StrDataObject
+if ($r.$StrCancelled)  { 'Stopped by timeout; session still usable.' }
+elseif ($r.TimedOut)   { "Abandoned ($($r.TimedOut)); open a new session." }
+```
+
+**Things you need to know**
+
+- **A timeout abandons work, it does not roll it back.** A request killed or cancelled halfway leaves whatever it had
+  done in place. Choose timeouts well above the slowest legitimate request, and make destructive operations safe to
+  repeat.
+- **The command channel has its own token.** STATUS/CANCEL/KILL are authenticated with a command token derived
+  one-way from the session nonce (`PipeInfo.CommandToken`). It can cancel or kill the server but cannot connect to the
+  data pipe and run code, so it is safe for it to appear in a verbose PipeInfo dump where the nonce must not.
+- **Audit trail.** The server writes Application Event Log entries (source `NamedPipe`): 4511 CANCEL accepted, 4512 KILL
+  accepted, 4513 a command refused for a wrong or missing token.
+- **Requests run in a nested pipeline** inside the server (same session state and module scope), so a CANCEL has
+  something to stop. Result shapes and error reporting were verified identical to the old inline execution.
+- **Interruptible vs not.** Busy loops, sleeps and native programs: cancelled in about 10 ms. Raw console input
+  (`[Console]::ReadKey`, native console readers): not interruptible, hence the KILL escalation.
 
 ## Architecture
 
@@ -625,7 +679,7 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 |-----------|------|---------|-------------|
 | `InfoDisplay` | Int | 0 | Bitmask: 1=server/client progress, 2=Show-VerboseData, 4=debug output, 8=keep server diagnostics log on a clean run (combine values, e.g. 15=all) |
 | `AdminRequired` | Bool | $False | Run server process with elevated (Administrator) privileges |
-| `Wait` | Bool | $False | Keep server window open after the pipe closes |
+| `Wait` | Bool | $False | Keep server window open after the pipe closes - for `WaitSeconds` (v0.16+), then it closes by itself |
 | `WindowStyle` | String | Minimized | Server window style: Normal, Minimized, Maximized, Hidden |
 | `ChunkSize` | Int | 32768 | Chunk size in characters for large data transfers |
 | `Depth` | Int | 2 | Serialization depth for nested objects |
@@ -633,8 +687,9 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 | `Verbose` | Bool | $False | Enable verbose output |
 | `ServerWaitTimeout` | Int | 60 | Seconds the server waits for a client connection |
 | `ClientConnectTimeout` | Int | 10000 | Milliseconds the client waits to connect to the server |
-| `ChunkReadTimeout` (v0.13+) | Int | 30000 | Milliseconds Receive-Data waits for the NEXT chunk of an already-started chunked transfer. Does NOT apply to the first read of a message (waiting for a server-side operation to complete, or for the server's next request, has no timeout - both are normal, not stalls) - only to a gap AFTER a transfer has already begun, which means the sender broke mid-stream. |
+| `ChunkReadTimeout` (v0.13+) | Int | 30000 | Milliseconds Receive-Data waits for the NEXT chunk of an already-started chunked transfer. Does NOT apply to the first read of a message (waiting for a server-side operation to complete, or for the server's next request, has no timeout - both are normal, not stalls) - only to a gap AFTER a transfer has already begun, which means the sender broke mid-stream. A caller can bound the first read per call with `Send-Request -TimeoutSeconds` / `-MaxRuntimeSeconds` (v0.16+). |
 | `RedactPotentialSecrets` (v0.15+) | Bool | $True | Gates the built-in structural base64 check described below. See that section before changing this. |
+| `WaitSeconds` (v0.16+) | Int | 300 | With `Wait` set: seconds the server window stays open after the pipe exits or the server crashes (1..3600; a keypress ends it early). Replaces the unbounded `Pause`. |
 
 ### RedactPattern (v0.5+)
 
@@ -808,6 +863,8 @@ The communication payload. Contains:
 - `Error` - Any error information
 - `ServerPID` / `ClientPID` - Process identifiers
 - `ServerUser` / `ClientUser` - User identities
+- `Cancelled` (v0.16+) - `$true` when the server stopped the request on a CANCEL command or a client timeout; `Error` then explains it and the session is still open
+- `TimedOut` (v0.16+) - set by `Send-Request` when it abandoned a request: `CancelNotHonoured` (server still running it) or `ServerKilled` (server terminated)
 
 ### PipeInfo
 The pipe connection details:
@@ -816,6 +873,8 @@ The pipe connection details:
 - `Reader` - StreamReader for the pipe
 - `Writer` - StreamWriter for the pipe
 - `InfoDisplay` / `ChunkSize` / `Depth` / `ChunkReadTimeout` (v0.13+) - Copied from ServerClientParams
+- `CommandToken` (v0.16+) - Authenticates STATUS / CANCEL / KILL on the health pipe. Derived one-way from the session nonce, so it can cancel or kill the server but cannot open the data pipe.
+- `ReadTimeoutMs` / `DeadlineTicks` / `TimedOut` / `PendingRead` (v0.16+) - Set by `Send-Request` for the duration of one call to implement `-TimeoutSeconds` / `-MaxRuntimeSeconds`; cleared afterwards. Not for callers to set.
 
 ## InfoDisplay Bitmask
 
@@ -1061,7 +1120,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.15' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.16' }
     )
 }
 ```
@@ -1208,6 +1267,9 @@ These are exported and available to consumers:
 |----------|-------------|
 | `Start-PipeSession` | Sets up a complete pipe session in a single call |
 | `Test-PipeSession` | Non-disruptive pipe health check |
+| `Get-PipeRequestStatus` | 0.16: Idle / Busy (id, elapsed ms) / Refused / Unreachable, via the health pipe |
+| `Stop-PipeRequest` | 0.16: CANCEL the running request; the session stays open |
+| `Stop-PipeServer` | 0.16: KILL the server process; the session is lost |
 | `Stop-PipeSession` | Clean shutdown with ExitPipe + dispose |
 | `Send-Request` | Sends a request from client to server |
 | `Set-ObjectParameterSet` | Creates and initialises data structures |
@@ -1256,7 +1318,7 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.15   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.16   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
 

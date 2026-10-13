@@ -269,6 +269,13 @@
 						{ $MyOptions.$StrNonce }
 						Else
 						{ [Guid]::NewGuid().ToString('N') }
+						# 0.16: how long a server with Wait set keeps its window open after the pipe exits (see Wait-PipeServerExit).
+						$StrWaitSeconds = if ($null -ne $MyParameters.$StrWaitSeconds)
+						{ [int]$MyParameters.$StrWaitSeconds }
+						Elseif ($null -ne $MyOptions.$StrWaitSeconds)
+						{ [int]$MyOptions.$StrWaitSeconds }
+						Else
+						{ [int]300 }
 						$StrLogRetentionDays = if ($null -ne $MyParameters.$StrLogRetentionDays)
 						{ [int]$MyParameters.$StrLogRetentionDays }
 						Elseif ($null -ne $MyOptions.$StrLogRetentionDays)

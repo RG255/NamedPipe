@@ -1,5 +1,45 @@
 # NamedPipe Changelog
 
+## Version 0.16 - 2026-10-13 (supersedes 0.15)
+
+Theme: a request that loops or blocks on console input in a hidden elevated server can now be recovered from a
+non-elevated client, instead of wedging the session for ever.
+
+### Added
+
+- **Health-pipe command channel** (STATUS / CANCEL / KILL), authenticated with a command token derived one-way from the
+  session nonce (`PipeInfo.CommandToken`; it cannot be used to connect to the data pipe). Every CANCEL / KILL / refusal is
+  written to the Application Event Log (source `NamedPipe`, ids 4511 / 4512 / 4513).
+- **Requests run in a nested pipeline** in the server's own runspace, so CANCEL can stop them and the session survives.
+  Result shapes, `$Error` growth and module-private function resolution match the old inline execution.
+- **`Send-Request -TimeoutSeconds`** (inactivity; progress messages restart it), **`-MaxRuntimeSeconds`** (absolute),
+  **`-CancelGraceSeconds`**, **`-NoKillOnTimeout`**. On expiry: CANCEL, then KILL if the cancel is not honoured. A honoured
+  cancel returns the server's response with `Cancelled = $true` and the session stays open. Defaults are unbounded, so
+  existing callers are unchanged.
+- **New exports:** `Get-PipeRequestStatus`, `Stop-PipeRequest`, `Stop-PipeServer`; `Stop-PipeSession -Force`.
+- **Server launched `-NonInteractive`:** `Read-Host` / `pause` inside a request fail immediately with an ordinary error.
+- **Bounded `Wait`:** the unbounded `Pause` is replaced by `WaitSeconds` (default 300, clamped 1..3600), ended early by a key.
+- **`Test-PipeSession`, `Stop-PipeSession` and the command helpers accept a whole `ServerClientParams`** where a
+  `PipeInfo` is expected (the PipeInfo is unwrapped; any other wrong argument still just fails the caller's own
+  checks). Found when a consumer passed the whole object: `Test-PipeSession` answered a silent `$false` for a live
+  session, no ExitPipe was ever sent, and every close leaked a hidden elevated server.
+- New tests: `Test-CommandChannel.ps1`, `Test-RequestTimeout.ps1`, `Test-ElevatedCancel.ps1` (one UAC prompt).
+- New examples: `07-Timeout-And-Cancel.ps1`, `08-Status-And-Stop-From-Another-Runspace.ps1`,
+  `09-NonInteractive-And-Bounded-Wait.ps1`; `Tests\Start-PipeTest.ps1` gains a command-channel section (skip it with
+  `-SkipCommandChannel`; it also skips itself when a RequestPolicy is active).
+
+### Fixed
+
+- **A Windows PowerShell 5.1 client could not start a server at all** (since 0.15): `Start-Process -WhatIf:$false` throws
+  there because `Start-Process` has no `-WhatIf` in 5.1. A local `$WhatIfPreference = $false` is used instead.
+
+### Behaviour notes
+
+- A timed-out request is **abandoned, not rolled back**: whatever it had already done stays done.
+- Raw console input (`[Console]::ReadKey`, native console readers) cannot be interrupted; that is what the KILL
+  escalation is for. Busy loops, sleeps and native programs are cancelled in about 10 ms.
+- A cancelled or killed server leaves its Event Log trail; the data pipe's capability nonce is unchanged and unexposed.
+
 ## Version 0.15 - 2026-09-19 (branched 2026-09-19)
 
 ### Fixed (2026-10-06, in place - no version bump)

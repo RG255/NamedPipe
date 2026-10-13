@@ -392,6 +392,48 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Capability nonce (0.11 hardening 4.2): client presents it as the first line; server admits only a matching connection. Survives the different-PID hand-off (PID is NOT used to gate).'
 		}
+		StrReadTimeoutMs                     = @{
+			Value  = 'ReadTimeoutMs'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.16: PipeInfo key, set by Send-Request for one call: inactivity timeout (ms) for the NEXT message from the server; every message (progress included) restarts it. 0/absent = unbounded (the historic behaviour).'
+		}
+		StrDeadlineTicks                     = @{
+			Value  = 'DeadlineTicks'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.16: PipeInfo key, set by Send-Request for one call: absolute UTC deadline (DateTime ticks) for the whole request; progress does NOT extend it. 0/absent = none.'
+		}
+		StrTimedOut                          = @{
+			Value  = 'TimedOut'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.16: on PipeInfo, set by Receive-Data when a timed read expired (Inactivity or MaxRuntime); on a DataObject, set by Send-Request when a request was abandoned (CancelNotHonoured or ServerKilled).'
+		}
+		StrPendingRead                       = @{
+			Value  = 'PendingRead'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.16: PipeInfo key holding the ReadLineAsync task left outstanding when a timed read expired, so the response to the abandoned request is picked up by the next Receive-Data instead of being lost or read twice.'
+		}
+		StrWaitSeconds                       = @{
+			Value  = 'WaitSeconds'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.16: with Wait set, seconds the server window stays open after the pipe exits or the server crashes (a keypress ends it early). Default 300, clamped to 1..3600. Replaces the unbounded Pause, which also made -NonInteractive impossible.'
+		}
+		StrCommandToken                      = @{
+			Value  = 'CommandToken'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.16: PipeInfo key holding the health-pipe COMMAND token (STATUS/CANCEL/KILL), derived one-way from the capability nonce by Get-PipeCommandToken. Deliberately NOT the nonce itself: a leaked token can cancel or kill the server but cannot connect to the data pipe and run code.'
+		}
+		StrCancelled                         = @{
+			Value  = 'Cancelled'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.16: DataObject key set to $true by the server when a request was stopped by a CANCEL command or client timeout; DataObject.Error then carries the explanation.'
+		}
 		StrLogRetentionDays                  = @{
 			Value  = 'LogRetentionDays'
 			Scope  = $VSScript

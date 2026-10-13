@@ -51,7 +51,7 @@
 #>
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.15 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.16 -ErrorAction Stop
 
 Function Global:Test-EchoValue { Param ($Value) return $Value }
 

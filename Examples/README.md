@@ -36,3 +36,13 @@ powershell.exe -NoProfile -File .\01-Basic-Session.ps1
    security gap but broke readability - see the script's own doc comment for the real Pester failure
    that caught it), makes explicit the "potential, not confirmed" distinction the option's own name
    carries, and demonstrates turning `RedactPotentialSecrets` off to see a real value in the log.
+7. **`07-Timeout-And-Cancel.ps1`** (0.16) - a request that would take a minute with `-TimeoutSeconds 3`: it comes
+   back as `Cancelled = $true` and the SAME session answers the next request. Then progress messages keeping a
+   busy request alive past the inactivity timeout, and `-MaxRuntimeSeconds` as the cap progress cannot extend.
+8. **`08-Status-And-Stop-From-Another-Runspace.ps1`** (0.16) - `Get-PipeRequestStatus` and `Stop-PipeRequest` from a
+   second runspace while `Send-Request` is blocked, then a request that CANNOT be cancelled
+   (`[Console]::ReadKey`): `-NoKillOnTimeout` leaves the decision with you and `Stop-PipeServer` ends it.
+9. **`09-NonInteractive-And-Bounded-Wait.ps1`** (0.16) - `Read-Host` inside a request fails at once because the
+   server is `-NonInteractive`, and the `Wait` option now closes the server window after `WaitSeconds` instead of
+   waiting for ever. **This one pops a server window for the wait - do not click it away or press a key** if you
+   want to see the full time.

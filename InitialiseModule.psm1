@@ -34,7 +34,7 @@
 		to use while it is running.
 
 		Remove-Module NamedPipe -Force -ErrorAction SilentlyContinue
-		Import-Module NamedPipe -RequiredVersion 0.15
+		Import-Module NamedPipe -RequiredVersion 0.16
 
 		Where -RequiredVersion 0.14 is the version of the module to use, there can be multiple
 		versions of the same module as its functionality is improved or expanded.
