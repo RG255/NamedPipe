@@ -986,6 +986,14 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
 			Wait-RDJob $Job
 			$Result.Error | Should -Match 'not an NPF2 frame'
+			# The wording must not claim a single cause: a stale peer, a foreign writer and a corrupted stream look identical here.
+			$Result.Error | Should -Match 'different build'
+			$Result.Error | Should -Match 'something else wrote to the pipe'
+			$Result.Error | Should -Match 'corrupted'
+			$Result.Error | Should -Match 'cannot tell which end'
+			$Result.Error | Should -Match 'catch audit'
+			$Result.Error | Should -Match 'report it'
+			$Result.Error | Should -Not -Match 'most likely'
 		}
 
 		It 'Refuses a payload whose bytes were altered (authentication code mismatch)' {

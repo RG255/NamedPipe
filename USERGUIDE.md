@@ -280,7 +280,7 @@ which detects accidental damage but not deliberate tampering.
 
 | Check | What it catches | Error text (in the returned `.Error`) |
 |---|---|---|
-| Marker | a line that is not a frame: the other end runs a different build of the module (most often a PowerShell window that loaded NamedPipe before it was updated - close and reopen it), or the stream is corrupted | `Pipe frame rejected: the line is not an NPF2 frame. The other end is most likely running a different build ...` |
+| Marker | a line that is not a frame. Three causes look identical: the other end runs a different build of the module (often a PowerShell window that loaded NamedPipe before it was updated), something other than NamedPipe wrote to the pipe, or the stream is corrupted | `Pipe frame rejected: the line is not an NPF2 frame. Either the other end runs a different build ... or something else wrote to the pipe, or the stream is corrupted ...` |
 | Length | truncated or extended payload | `Pipe frame rejected: payload is N characters, the frame declares M ...` |
 | Authentication code | any altered id, length or payload; a frame forged without the session key | `Pipe frame rejected: the authentication code does not match ...` |
 | Response id | a response that belongs to a different request, e.g. the late answer of a request abandoned after a timeout | `Receive-Data: response carries frame id X but the request in flight is Y ...` |
@@ -290,7 +290,7 @@ which detects accidental damage but not deliberate tampering.
   with the id of the request it accepted. A mismatching response is discarded, never returned for the wrong request. A new
   connection (a re-listen, or a hand-off client) starts a new id sequence.
 - **Both ends must be the same module version.** There is no fallback to unframed lines; the whole module is delivered in one
-  piece, so this holds in normal use. A 'not an NPF2 frame' error means two different builds met - almost always a long-open PowerShell window that imported NamedPipe before the module was updated, talking to a freshly started server. Close and reopen the old window.
+  piece, so this holds in normal use. A 'not an NPF2 frame' error cannot say which end is older, or whether the cause is a version mismatch at all. After an update the usual cause is a long-open PowerShell window that imported NamedPipe before the module was updated, talking to a freshly started server, so the first step is to close and reopen the client window and any server window it started. If it recurs from fresh sessions it is not a stale window: treat it as an anomaly (it is in the catch audit) and report it.
 - **Every rejection is audited** (catch-audit, source `Receive-Data: pipe integrity frame rejected`): the message and caller only,
   never the payload. A rejection is an anomaly, not routine; if you see one, keep the audit record and report it.
 - What this does and does not give you: with the key, an attacker who can write to the pipe but does not hold the nonce cannot

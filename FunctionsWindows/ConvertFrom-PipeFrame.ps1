@@ -10,6 +10,12 @@
 		check failed; Receive-Data's own Catch turns that into the returned DataObject's Error and audits it. There is deliberately no
 		fallback to unframed lines: both ends of a pipe always run the same module version.
 
+		The marker failure is the one check that cannot tell its cause: a peer running an older build (a window that loaded the module
+		before an update), a writer that is not NamedPipe at all, and a corrupted stream all look identical, and the frame carries no
+		version field that would show which end is older. The message therefore names all three, suggests a restart as the first step
+		only, and says to report it if it recurs from fresh sessions. The user guide describes the same behaviour (keep the two in step;
+		the test pins the key phrases).
+
 		.PARAMETER Line
 		One line as read from the pipe.
 
@@ -37,7 +43,7 @@
 	# Split into at most 5 parts so a '|' inside the payload (JSON chunk lines contain them) stays in the payload.
 	$Private:Parts = $Line.Split([char[]]'|', 5)
 	If ($Private:Parts.Count -ne 5 -or $Private:Parts[0] -cne 'NPF2')
-	{ throw 'Pipe frame rejected: the line is not an NPF2 frame. The other end is most likely running a different build of the NamedPipe module - typically a PowerShell window that loaded NamedPipe before it was last updated. Close and reopen that PowerShell session (and any server window it started), then try again. If it happens again from fresh sessions, the stream is being corrupted.' }
+	{ throw 'Pipe frame rejected: the line is not an NPF2 frame. Either the other end runs a different build of the NamedPipe module (for example a PowerShell window that loaded the module before it was updated - this check cannot tell which end is the older one), or something else wrote to the pipe, or the stream is corrupted. This rejection is recorded in the catch audit. First step: close and reopen the client window and any server window it started, then try again. If it recurs from fresh sessions, treat it as an anomaly and report it.' }
 
 	$Private:Id = 0
 	$Private:Len = 0
