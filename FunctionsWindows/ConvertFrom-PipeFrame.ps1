@@ -37,7 +37,7 @@
 	# Split into at most 5 parts so a '|' inside the payload (JSON chunk lines contain them) stays in the payload.
 	$Private:Parts = $Line.Split([char[]]'|', 5)
 	If ($Private:Parts.Count -ne 5 -or $Private:Parts[0] -cne 'NPF2')
-	{ throw 'Pipe frame rejected: the line is not an NPF2 frame (module version mismatch or corrupted stream).' }
+	{ throw 'Pipe frame rejected: the line is not an NPF2 frame. The other end is most likely running a different build of the NamedPipe module - typically a PowerShell window that loaded NamedPipe before it was last updated. Close and reopen that PowerShell session (and any server window it started), then try again. If it happens again from fresh sessions, the stream is being corrupted.' }
 
 	$Private:Id = 0
 	$Private:Len = 0
