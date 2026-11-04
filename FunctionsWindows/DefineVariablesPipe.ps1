@@ -416,6 +416,30 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = '0.16: PipeInfo key holding the ReadLineAsync task left outstanding when a timed read expired, so the response to the abandoned request is picked up by the next Receive-Data instead of being lost or read twice.'
 		}
+		StrFrameSeq                          = @{
+			Value  = 'FrameSeq'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.17: PipeInfo key, client side: counter used to give each request a frame id (Send-Data).'
+		}
+		StrFrameId                           = @{
+			Value  = 'FrameId'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.17: PipeInfo key: frame id of the last frame Receive-Data accepted. The server answers a request with this id (Send-Data).'
+		}
+		StrFrameKey                          = @{
+			Value  = 'FrameKey'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.17: PipeInfo key: the frame MAC key (64 hex), derived one-way from the capability nonce by Get-PipeFrameKey on both ends. Absent when the session has no nonce (unkeyed SHA-256 framing).'
+		}
+		StrExpectFrameId                     = @{
+			Value  = 'ExpectFrameId'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.17: PipeInfo key, client side: frame id the next response must carry. Receive-Data rejects a frame with any other id (a stale or misattributed response). Absent on the server, which does not check.'
+		}
 		StrWaitSeconds                       = @{
 			Value  = 'WaitSeconds'
 			Scope  = $VSScript

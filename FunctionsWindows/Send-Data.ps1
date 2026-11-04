@@ -84,6 +84,19 @@
 		$DataObject.$StrError = $Null
 	}
 
+	# 0.17 integrity frame: every line written below is wrapped by ConvertTo-PipeFrame with a frame id, the payload
+	# length and its SHA-256, and Receive-Data verifies all three. A client request gets a new id and remembers it as
+	# the id the response must carry; the server answers (and sends progress) with the id of the request it last
+	# accepted. Both ends are always the same module version, so there is no unframed fallback.
+	If ($DataObject.$StrServerPID -eq $PID)
+	{ $Private:FrameId = [int]$PipeInfo.$StrFrameId }
+	Else
+	{
+		$Private:FrameId = [int]$PipeInfo.$StrFrameSeq + 1
+		$PipeInfo.$StrFrameSeq = $Private:FrameId
+		$PipeInfo.$StrExpectFrameId = $Private:FrameId
+	}
+
 	# Note: Removed pre-serialization size validation (v2.02 > v2.03)
 	# Pre-serializing just to check size caused OutOfMemory on complex objects.
 	# ConvertTo-Serial handles chunking automatically based on ChunkSize parameter.
@@ -141,7 +154,7 @@
 				# its own comment. The reassembled payload itself still round-trips through full
 				# PSSerializer fidelity once, after all chunks are back together - only the per-chunk
 				# TRANSPORT wrapper is now lightweight.
-				$chunkLine = 'JCHUNK:' + ($chunk | ConvertTo-Json -Compress)
+				$chunkLine = ConvertTo-PipeFrame -Payload ('JCHUNK:' + ($chunk | ConvertTo-Json -Compress)) -Id $Private:FrameId -Key $PipeInfo.$StrFrameKey
 				$PipeInfo.$StrWriter.WriteLine($chunkLine)
 				$PipeInfo.$StrWriter.Flush()
 
@@ -159,7 +172,7 @@
 			{
 				Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Single message, about to WriteLine" -ForegroundColor Yellow
 			}
-			$PipeInfo.$StrWriter.WriteLine($serialized)
+			$PipeInfo.$StrWriter.WriteLine((ConvertTo-PipeFrame -Payload ([string]$serialized) -Id $Private:FrameId -Key $PipeInfo.$StrFrameKey))
 			$PipeInfo.$StrWriter.Flush()
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{

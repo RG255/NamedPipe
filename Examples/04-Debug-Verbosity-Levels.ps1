@@ -13,7 +13,7 @@
 #>
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.16 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.17 -ErrorAction Stop
 
 $Private:Levels = @(
 	@{ Value = 0; Label = '0 = silent' }

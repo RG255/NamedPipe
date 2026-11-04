@@ -13,7 +13,7 @@
 #>
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.16 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.17 -ErrorAction Stop
 
 Write-Host 'Starting a non-elevated pipe session...' -ForegroundColor Cyan
 $Session = Start-PipeSession -MyParameters @{} -Options @{}

@@ -36,7 +36,7 @@ function New-TestSession
 	Param()
 	$opts = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{}
 	$opts.$StrWindowStyle = $StrMinimized
-	$opts.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.16'; Path = $Script:ModuleManifest }
+	$opts.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.17'; Path = $Script:ModuleManifest }
 	$s = Start-PipeSession -MyParameters $opts
 	$pid2 = $s.$StrSendRequestParams.$StrDataObject.$StrServerPID
 	$Script:Servers.Add([int]$pid2)
@@ -66,7 +66,7 @@ function Wait-ProcessGone
 	$false
 }
 
-Write-Host ("`n=== NamedPipe 0.16 request timeouts ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
+Write-Host ("`n=== NamedPipe 0.17 request timeouts ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
 
 try
 {

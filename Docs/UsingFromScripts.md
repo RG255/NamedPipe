@@ -136,6 +136,11 @@ elseif ($r.$StrTimedOut)   { <# server was terminated; open a new session #> }
 - From another runspace, `Get-PipeRequestStatus`, `Stop-PipeRequest` and `Stop-PipeServer` work on the same
   `PipeInfo`, including against an elevated server from a non-elevated caller.
 - A server started with `Wait` stays open for `WaitSeconds` (default 300), not for ever.
+- **0.17: after a timeout whose cancel was NOT honoured (`-NoKillOnTimeout`), do not send another request on that session.**
+  `Send-Request` now refuses with an error saying so; call `Stop-PipeSession` and start a new session.
+- **0.17: every pipe line is authenticated and integrity-checked.** An `.Error` starting `Pipe frame rejected`, `Receive-Data: response carries
+  frame id` or `Receive-Data: request frame id` means a line was altered, truncated, forged, replayed, from a different module version, or a stale response. It is also written to the
+  catch-audit log. It should never happen in normal use: keep the audit record and report it rather than retrying blindly.
 
 ## Common pitfalls
 

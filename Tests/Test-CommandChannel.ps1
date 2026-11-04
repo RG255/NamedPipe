@@ -57,7 +57,7 @@ function Invoke-HealthLine
 $Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
 $Private:MyOptions = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters $Private:MyBoundParameters
 $Private:MyOptions.$StrWindowStyle = $StrMinimized
-$Private:MyOptions.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.16'; Path = $Script:ModuleManifest }
+$Private:MyOptions.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.17'; Path = $Script:ModuleManifest }
 
 $Session            = Start-PipeSession -MyParameters $Private:MyOptions
 $ServerClientParams = $Session.$StrServerClientParams
@@ -66,7 +66,7 @@ $PipeName           = $ServerClientParams.$StrPipeInfo.$StrName
 $Token              = $ServerClientParams.$StrPipeInfo.$StrCommandToken
 $ServerPid          = $SendRequestParams.$StrDataObject.$StrServerPID
 
-Write-Host ("`n=== NamedPipe 0.16 command channel ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
+Write-Host ("`n=== NamedPipe 0.17 command channel ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
 Write-Host ('  pipe: {0}   server PID: {1}' -f $PipeName, $ServerPid) -ForegroundColor DarkGray
 
 function Send-Test

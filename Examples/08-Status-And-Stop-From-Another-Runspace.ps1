@@ -22,7 +22,7 @@
 #>
 
 Remove-Module -Name NamedPipe -Force -ErrorAction SilentlyContinue
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.16 -ErrorAction Stop
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.17 -ErrorAction Stop
 
 $Session = Start-PipeSession -MyParameters @{} -Options @{ $StrWindowStyle = $StrMinimized }
 $ServerClientParams = $Session.$StrServerClientParams
@@ -39,7 +39,7 @@ try
 	# A second runspace waits 2 s, looks at the server, then cancels. (It needs the module too.)
 	$Private:HelperScript = @'
 param($PipeInfo)
-Import-Module -Name NamedPipe -RequiredVersion 0.16 -ErrorAction Stop
+Import-Module -Name NamedPipe -RequiredVersion 0.17 -ErrorAction Stop
 Start-Sleep -Seconds 2
 $s = Get-PipeRequestStatus -PipeInfo $PipeInfo
 $c = Stop-PipeRequest -PipeInfo $PipeInfo

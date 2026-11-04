@@ -338,7 +338,11 @@
 				$Private:NestedOut = $Private:NestedPs.Invoke()
 				# A stopped nested pipeline returns NORMALLY with empty output and no exception, so a cancelled
 				# request would otherwise look exactly like one that returned $null. Check explicitly.
-				If ($Private:ReqState.CancelRequested -or $Private:NestedPs.InvocationStateInfo.State -eq [System.Management.Automation.PSInvocationState]::Stopped)
+				# Code review 2026-10-20: a CANCEL landing after the pipeline already COMPLETED sets CancelRequested but stops
+				# nothing (BeginStop on a Completed instance never yields Stopped), so the flag alone must not discard a real
+				# result. Cancelled = the pipeline reports Stopped, or the flag is set and it did not complete.
+				$Private:NestedState = $Private:NestedPs.InvocationStateInfo.State
+				If ($Private:NestedState -eq [System.Management.Automation.PSInvocationState]::Stopped -or ($Private:ReqState.CancelRequested -and $Private:NestedState -ne [System.Management.Automation.PSInvocationState]::Completed))
 				{
 					$DataObject.$StrResult    = $null
 					$DataObject.$StrError     = 'Request cancelled by the client (timeout or cancel command). The server session is still open.'

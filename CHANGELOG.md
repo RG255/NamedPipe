@@ -1,4 +1,32 @@
-# NamedPipe Changelog
+﻿# NamedPipe Changelog
+
+## Version 0.17 - 2026-11-04 (supersedes 0.16)
+
+Theme: the data pipe now checks that what arrives is what was sent, and that a response belongs to the request in flight.
+
+### Changed (wire format - both ends are always the same module version, so there is no fallback to unframed lines)
+
+- **Integrity frame on every line.** `Send-Data` wraps each line (single message or chunk) as
+  `NPF2|<id>|<length>|<mac>|<payload>`; `Receive-Data` verifies the marker, the length and the authentication code and rejects the
+  line with a specific error if any check fails. The code covers the id, the length and the payload, and is an HMAC-SHA256 keyed with a
+  key both ends derive from the session nonce (`PipeInfo.FrameKey`, label distinct from the command token's), so a frame cannot be
+  altered or forged by anyone without the nonce; a session with no nonce falls back to an unkeyed SHA-256 (damage detection only).
+  New internal helpers `ConvertTo-PipeFrame`, `ConvertFrom-PipeFrame`, `Get-PipeFrameMac`, `Get-PipeFrameKey`. Chunked transfers keep
+  their existing per-transfer checksum as well.
+- **Replays refused.** The server requires each request id to be higher than the last one accepted on the connection; a new
+  connection (re-listen, hand-off client) starts a new sequence.
+- **Request id.** The client gives each request a new id and expects the response (and any progress messages) to carry it; the
+  server answers with the id of the request it accepted. A response with any other id - for example the late answer of a request
+  that was abandoned after a timeout - is discarded with an error instead of being returned for the wrong request.
+- **Rejections are audited.** Every integrity-frame rejection also writes a catch-audit record (message only, never the payload),
+  so an anomaly is recorded centrally instead of only surfacing as an Error on one caller's returned object.
+
+### Fixed (found in an independent code review of 0.16, 2026-10-20)
+
+- `Get-SBResult`: a CANCEL that arrived after the request had already completed marked it Cancelled and discarded the real result.
+  Cancelled now requires the nested pipeline to be Stopped (or the cancel flag set while it had not completed).
+- `Send-Request` refuses to send while an earlier timed request on the same session is still unresolved (`-NoKillOnTimeout` with an
+  unhonoured cancel), returning an error that says to start a new session, instead of desynchronising the stream.
 
 ## Version 0.16 - 2026-10-13 (supersedes 0.15)
 

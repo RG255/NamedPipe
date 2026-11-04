@@ -426,6 +426,10 @@ Function Start-PipeServerOrClient
 						}
 					}
 					# === End capability-nonce handshake ===
+					# 0.17: a new connection starts a new request-id sequence (a hand-off client is a different process with its own
+					# counter), and the frame MAC key is derived from the nonce this connection just proved it holds.
+					$ServerClientParams.$StrPipeInfo.$StrFrameId = 0
+					$ServerClientParams.$StrPipeInfo.$StrFrameKey = Get-PipeFrameKey -Nonce ([string]$ServerClientParams.$StrNonce)
 					$Private:EverConnected = $true
 					Add-ServerLogEntry -Message 'client connected and validated'
 					Function Stop-HealthPipe
@@ -1004,6 +1008,8 @@ Function Start-PipeServerOrClient
 				# 0.16: derive the health-pipe command token (STATUS/CANCEL/KILL) for this session. One-way from the
 				# nonce, so PipeInfo can carry it without exposing the nonce itself (see Get-PipeCommandToken).
 				$ServerClientParams.$StrPipeInfo.$StrCommandToken = Get-PipeCommandToken -Nonce ([string]$ServerClientParams.$StrNonce)
+				# 0.17: the frame MAC key, derived the same way on both ends (a different label from the command token).
+				$ServerClientParams.$StrPipeInfo.$StrFrameKey = Get-PipeFrameKey -Nonce ([string]$ServerClientParams.$StrNonce)
 				If ($ServerClientParams.$StrInfoDisplay -band 4)
 				{Write-Host 'DEBUG CLIENT: StreamReader/Writer created successfully' -ForegroundColor Green}
 			}

@@ -109,6 +109,15 @@
 		}
 	}
 
+	# Code review 2026-10-20: a previous timed request whose CANCEL was not honoured (-NoKillOnTimeout) leaves its
+	# response still owed on this pipe (PendingRead). Sending now would make Receive-Data hand that stale response to
+	# THIS request and desync the stream for the rest of the session, so refuse and say why.
+	If ($null -ne $PipeInfo.$StrPendingRead)
+	{
+		$DataObject.$StrError = 'Send-Request: an earlier timed request on this session is still unresolved (its cancel was not honoured). Stop-PipeSession and start a new session; sending another request here would return the earlier request''s answer.'
+		return $DataObject
+	}
+
 	# 0.16 timeouts (both 0 = unbounded, the historic behaviour). Armed on PipeInfo for THIS call only; Receive-Data
 	# enforces them per read and Resolve-PipeRequestTimeout escalates (CANCEL, then KILL) when one expires.
 	$Private:RequestObject = $DataObject

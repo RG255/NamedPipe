@@ -2,7 +2,7 @@
 #requires -Version 5.0
 <#
     .SYNOPSIS
-    Proves the 0.16 command channel against an ELEVATED server driven from a NON-ELEVATED client - the case the
+    Proves the 0.16+ command channel against an ELEVATED server driven from a NON-ELEVATED client - the case the
     channel exists for, since an unelevated process cannot Stop-Process an elevated one.
 
     Raises ONE UAC prompt (it may be on the taskbar). Uses one session: a timed-out request is cancelled and the
@@ -38,12 +38,12 @@ $ServerPid = 0
 try
 {
 	$opts = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{}
-	$opts.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.16'; Path = $Script:ModuleManifest }
+	$opts.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.17'; Path = $Script:ModuleManifest }
 	$Session = Start-PipeSession -MyParameters $opts -Options @{ $StrAdminRequired = $true; $StrWindowStyle = $StrMinimized }
 	$Params   = $Session.$StrSendRequestParams
 	$PipeInfo = $Session.$StrServerClientParams.$StrPipeInfo
 	$ServerPid = [int]$Params.$StrDataObject.$StrServerPID
-	Write-Host ("`n=== NamedPipe 0.16 elevated server, non-elevated client ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
+	Write-Host ("`n=== NamedPipe 0.17 elevated server, non-elevated client ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
 	Write-Host ('  server PID: {0}' -f $ServerPid) -ForegroundColor DarkGray
 
 	function Send-Test

@@ -121,6 +121,23 @@
 		}
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{ Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Receive-Data: About to deserialize" -ForegroundColor Cyan }
+		# 0.17 integrity frame: verify length + SHA-256 (ConvertFrom-PipeFrame throws, and this function's own Catch
+		# turns that into the returned DataObject's Error). The frame id is remembered so the server can answer with it;
+		# on a client, ExpectFrameId is the id of the request in flight, and a frame with any other id is a stale or
+		# misattributed response (for example the abandoned request's late answer) and is rejected, not delivered.
+		# The MAC covers id, length and payload and, when the session has a nonce, is keyed with PipeInfo.FrameKey, so a frame
+		# that was altered or forged without the key is refused. The server (no ExpectFrameId) additionally requires the request
+		# id to be higher than the last one accepted on this connection, so a replayed or duplicated request is refused.
+		$Private:Frame = ConvertFrom-PipeFrame -Line $line -Key $PipeInfo.$StrFrameKey
+		if ($null -ne $PipeInfo.$StrExpectFrameId)
+		{
+			if ($Private:Frame.Id -ne [int]$PipeInfo.$StrExpectFrameId)
+			{ throw ('Receive-Data: response carries frame id {0} but the request in flight is {1} - a stale or misattributed response was discarded.' -f $Private:Frame.Id, $PipeInfo.$StrExpectFrameId) }
+		}
+		elseif ($Private:Frame.Id -le [int]$PipeInfo.$StrFrameId)
+		{ throw ('Receive-Data: request frame id {0} is not higher than the last accepted id {1} - a replayed or duplicated request was refused.' -f $Private:Frame.Id, $PipeInfo.$StrFrameId) }
+		$PipeInfo.$StrFrameId = $Private:Frame.Id
+		$line = $Private:Frame.Payload
 		# A 'JCHUNK:' prefix means Send-Data wrote this chunk WRAPPER via the lightweight ConvertTo-Json
 		# path (2026-09-15, see Send-Data's own comment) - decode it the matching cheap way. Anything
 		# without that prefix is the original, non-chunked ConvertTo-Serial output (raw Base64 text, which
@@ -177,6 +194,13 @@
 				If (-not $Private:_lineTask.Wait($Private:_chunkTimeoutMs))
 				{ throw "Receive-Data: timed out after $Private:_chunkTimeoutMs ms waiting for the next chunk of transfer $transferId." }
 				$line = $Private:_lineTask.Result
+				# 0.17: continuation chunks are framed too, with the same id as the first.
+				if ($null -eq $line)
+				{ throw "Receive-Data: the pipe closed in the middle of chunked transfer $transferId." }
+				$Private:ChunkFrame = ConvertFrom-PipeFrame -Line $line -Key $PipeInfo.$StrFrameKey
+				if ($Private:ChunkFrame.Id -ne $Private:Frame.Id)
+				{ throw ('Receive-Data: chunk frame id {0} differs from the transfer''s frame id {1} in transfer {2}.' -f $Private:ChunkFrame.Id, $Private:Frame.Id, $transferId) }
+				$line = $Private:ChunkFrame.Payload
 				# Same 'JCHUNK:' prefix check as the first read above - every line from here on is a
 				# chunk continuation, so this always takes the lightweight branch in practice, but the
 				# check stays symmetric with the first read rather than assuming it.
@@ -227,6 +251,11 @@
 	}
 	Catch
 	{
+		# 0.17: an integrity-frame rejection (bad marker, length, SHA-256 or frame id) is an anomaly worth a central
+		# record, not just an Error on the returned object that only this caller sees. Only the message is audited -
+		# never the payload, which may hold sensitive request text. Write-MyCatchAudit handles its own persist failures.
+		if ($_.Exception.Message -match '^(Pipe frame rejected|Receive-Data: (response carries frame id|request frame id|chunk frame id))')
+		{ Write-MyCatchAudit -Source 'Receive-Data: pipe integrity frame rejected' -ErrorRecord $_ }
 		# If deserialization failed, $DataObject may not exist
 		# Create a minimal error object to return
 		if (-not $DataObject)

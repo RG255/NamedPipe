@@ -1,4 +1,4 @@
-﻿# NamedPipe Module v0.16 - User Guide
+﻿# NamedPipe Module v0.17 - User Guide
 
 For a short, practical guide to the session patterns and pitfalls when calling NamedPipe from your own scripts, see
 [Docs/UsingFromScripts.md](Docs/UsingFromScripts.md). This guide is the full reference.
@@ -17,6 +17,7 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 - Automatic chunking for large data transfers (default 32KB chunks)
 - Configurable serialization depth for complex objects
 - SHA-256 checksum verification for chunked data integrity
+- **Authenticated integrity frame on every pipe line (0.17)** - id, length and payload covered by an HMAC keyed from the session nonce, verified at both ends; replays refused
 - Built-in debug output at multiple verbosity levels
 - **FunctionExportTable** - internal functions are no longer exported by default
 - **Consumer module tracking** - spawned server automatically imports consumer modules
@@ -265,6 +266,44 @@ elseif ($r.TimedOut)   { "Abandoned ($($r.TimedOut)); open a new session." }
   something to stop. Result shapes and error reporting were verified identical to the old inline execution.
 - **Interruptible vs not.** Busy loops, sleeps and native programs: cancelled in about 10 ms. Raw console input
   (`[Console]::ReadKey`, native console readers): not interruptible, hence the KILL escalation.
+
+### What's New in v0.17 (integrity frame: what you send is what arrives)
+
+Every line written to the data pipe is now wrapped as `NPF2|<id>|<length>|<mac>|<payload>`. This is internal to
+`Send-Data` and `Receive-Data` (helpers `ConvertTo-PipeFrame` / `ConvertFrom-PipeFrame`, `Get-PipeFrameMac`, `Get-PipeFrameKey`);
+**no call you make changes**. The payload inside is exactly what 0.16 sent, so chunking and serialization are unchanged.
+
+`<mac>` is an authentication code over the id, the length AND the payload. When the session has a capability nonce (every normal
+session does) it is an HMAC-SHA256 keyed with a key both ends derive one-way from the nonce (`PipeInfo.FrameKey`), so only a holder of
+the nonce can produce a valid frame. A session started without a nonce (an older caller) falls back to a plain, unkeyed SHA-256,
+which detects accidental damage but not deliberate tampering.
+
+| Check | What it catches | Error text (in the returned `.Error`) |
+|---|---|---|
+| Marker | a line that is not a frame (module version mismatch, stream corruption) | `Pipe frame rejected: the line is not an NPF2 frame ...` |
+| Length | truncated or extended payload | `Pipe frame rejected: payload is N characters, the frame declares M ...` |
+| Authentication code | any altered id, length or payload; a frame forged without the session key | `Pipe frame rejected: the authentication code does not match ...` |
+| Response id | a response that belongs to a different request, e.g. the late answer of a request abandoned after a timeout | `Receive-Data: response carries frame id X but the request in flight is Y ...` |
+| Request id | a replayed or duplicated request (the server requires each request id to be higher than the last one on that connection) | `Receive-Data: request frame id X is not higher than the last accepted id Y ...` |
+
+- The client gives each request a new id and expects the response, and any progress messages, to carry it; the server answers
+  with the id of the request it accepted. A mismatching response is discarded, never returned for the wrong request. A new
+  connection (a re-listen, or a hand-off client) starts a new id sequence.
+- **Both ends must be the same module version.** There is no fallback to unframed lines; the whole module is delivered in one
+  piece, so this holds in normal use. A 'not an NPF2 frame' error normally means two different versions met.
+- **Every rejection is audited** (catch-audit, source `Receive-Data: pipe integrity frame rejected`): the message and caller only,
+  never the payload. A rejection is an anomaly, not routine; if you see one, keep the audit record and report it.
+- What this does and does not give you: with the key, an attacker who can write to the pipe but does not hold the nonce cannot
+  alter, forge or replay a line undetected. Someone who holds the nonce can already connect and run code, so the pipe ACL, the
+  medium-integrity label and the capability nonce (v0.10 / v0.12 above) remain the access control; the frame does not replace them.
+  The key is held in `PipeInfo.FrameKey` and, like `CommandToken`, appears in a verbose PipeInfo dump: do not paste such dumps into
+  logs you share.
+- **`Send-Request` now refuses to send on a session whose earlier timed request is unresolved** (a timeout with
+  `-NoKillOnTimeout` whose cancel was not honoured), returning an error that says to `Stop-PipeSession` and start a new one.
+  Before, the next request would have received the earlier request's answer.
+- A CANCEL that arrives just after a request has already completed no longer discards its real result.
+- Tracing the framing: `Enable-MyFunctionTrace -Option 1` (or `3`) shows the `ConvertTo-PipeFrame` / `ConvertFrom-PipeFrame` calls;
+  `-Option 2` (curated action detail) does not include them.
 
 ## Architecture
 

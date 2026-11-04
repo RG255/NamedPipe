@@ -57,9 +57,9 @@ Describe 'Module Import' {
 		Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
 	}
 
-	It 'Should be version 0.16' {
+	It 'Should be version 0.17' {
 		$Module = Get-Module -Name NamedPipe
-		$Module.Version.ToString() | Should -Be '0.16'
+		$Module.Version.ToString() | Should -Be '0.17'
 	}
 
 	It 'Should have a valid module version' {
@@ -843,19 +843,30 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 			Reader      = $Script:RDServerReader
 			Writer      = $Script:RDServerWriter
 			InfoDisplay = 0
+			FrameId     = 0
 		}
 
 		# Receive-Data is internal (not exported) - resolve it once inside the module, same
 		# pattern the Send-Data tests above already use for another internal function.
 		$Script:RDReceiveDataCmd = & (Get-Module NamedPipe) { Get-Command Receive-Data }
+		$Script:RDFrameCmd = & (Get-Module NamedPipe) { Get-Command ConvertTo-PipeFrame }
 
 		# Helper functions must be defined HERE, inside BeforeAll, not loose in the Describe
 		# body - Pester 5 runs a Describe body at DISCOVERY time in a different scope than the
 		# RUN phase that executes It blocks, so a bare "function" statement at Describe level is
 		# invisible by the time an It block tries to call it (found live: every It below failed
 		# with "term ... is not recognized" until these moved in here).
-		function Script:Send-RDLinesInBackground([String[]]$Lines)
+		function Script:Send-RDLinesInBackground([String[]]$Lines, [Switch]$Raw, [Switch]$KeepState, [String]$Key)
 		{
+			# 0.17: Receive-Data requires every line to be an integrity frame. Lines are framed here on the main
+			# thread (module calls must not run on the background thread - see the CONCURRENCY NOTE) with frame
+			# id 7 and, when given, a frame key; -Raw sends them exactly as given, for the tests that prove an
+			# unframed/damaged line is refused. The shared PipeInfo's last-accepted id is reset first, because the
+			# receiver (server role) refuses a request id that is not higher than the last one; -KeepState skips that
+			# reset for the replay test.
+			if (-not $KeepState) { $Script:RDPipeInfo.FrameId = 0 }
+			if (-not $Raw)
+			{ $Lines = @($Lines | ForEach-Object { & $Script:RDFrameCmd -Payload $_ -Id 7 -Key $Key }) }
 			# Raw .NET only, deliberately - see the CONCURRENCY NOTE above. Uses a separate
 			# Runspace + PowerShell instance (same technique the Health Pipe Protocol tests above
 			# already use for their background server), NOT Start-ThreadJob - ThreadJob is not
@@ -961,6 +972,104 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 		}
 	}
 
+	Context 'Integrity frame (0.17)' {
+		It 'Accepts a valid frame and remembers its id for the reply' {
+			$Job = Send-RDLinesInBackground -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$Result.Error | Should -BeNullOrEmpty
+			$Script:RDPipeInfo.FrameId | Should -Be 7
+		}
+
+		It 'Refuses a line that is not a frame' {
+			$Job = Send-RDLinesInBackground -Raw -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$Result.Error | Should -Match 'not an NPF2 frame'
+		}
+
+		It 'Refuses a payload whose bytes were altered (authentication code mismatch)' {
+			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Id 7
+			# flip one payload character, keeping the length: only the hash can catch it
+			$Bad = $Good.Substring(0, $Good.Length - 1) + $(if ($Good[-1] -eq 'A') { 'B' } else { 'A' })
+			$Job = Send-RDLinesInBackground -Raw -Lines @($Bad)
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$Result.Error | Should -Match 'authentication code'
+		}
+
+		It 'Refuses a frame whose id was altered even though length and payload are intact (id is covered)' {
+			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Id 7
+			$Bad = $Good -replace '^NPF2\|7\|', 'NPF2|8|'
+			$Bad | Should -Not -Be $Good
+			$Job = Send-RDLinesInBackground -Raw -Lines @($Bad)
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$Result.Error | Should -Match 'authentication code'
+		}
+
+		It 'Refuses a replayed request (id not higher than the last accepted one)' {
+			$Line = ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0
+			$Job = Send-RDLinesInBackground -Lines @($Line)
+			$First = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$First.Error | Should -BeNullOrEmpty
+			$Job = Send-RDLinesInBackground -KeepState -Lines @($Line)
+			$Second = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$Second.Error | Should -Match 'not higher than the last accepted id'
+		}
+
+		Context 'keyed frames (session has a nonce)' {
+			BeforeAll {
+				$Script:RDKey  = ('ab' * 32)
+				$Script:RDKey2 = ('cd' * 32)
+				$Script:RDKeyedPI = [PSCustomObject]@{ Reader = $Script:RDPipeInfo.Reader; Writer = $Script:RDPipeInfo.Writer; InfoDisplay = 0; FrameId = 0; FrameKey = $Script:RDKey }
+			}
+
+			It 'Accepts a frame authenticated with the session key' {
+				$Script:RDKeyedPI.FrameId = 0
+				$Job = Send-RDLinesInBackground -Key $Script:RDKey -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
+				$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDKeyedPI
+				Wait-RDJob $Job
+				$Result.Error | Should -BeNullOrEmpty
+				$Result.A | Should -Be 1
+			}
+
+			It 'Refuses a frame forged with a different key' {
+				$Script:RDKeyedPI.FrameId = 0
+				$Job = Send-RDLinesInBackground -Key $Script:RDKey2 -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
+				$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDKeyedPI
+				Wait-RDJob $Job
+				$Result.Error | Should -Match 'authentication code'
+			}
+
+			It 'Refuses an unkeyed frame when the receiver holds a key' {
+				$Script:RDKeyedPI.FrameId = 0
+				$Job = Send-RDLinesInBackground -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
+				$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDKeyedPI
+				Wait-RDJob $Job
+				$Result.Error | Should -Match 'authentication code'
+			}
+		}
+
+		It 'Refuses a truncated payload (length mismatch)' {
+			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Id 7
+			$Job = Send-RDLinesInBackground -Raw -Lines @($Good.Substring(0, $Good.Length - 5))
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$Result.Error | Should -Match 'truncated or altered'
+		}
+
+		It 'Rejects a response whose frame id is not the request in flight' {
+			$Private:PI = [PSCustomObject]@{ Reader = $Script:RDPipeInfo.Reader; Writer = $Script:RDPipeInfo.Writer; InfoDisplay = 0; FrameId = 0; ExpectFrameId = 99 }
+			$Job = Send-RDLinesInBackground -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Private:PI
+			Wait-RDJob $Job
+			$Result.Error | Should -Match 'frame id 7 but the request in flight is 99'
+		}
+	}
+
 	Context 'Failed deserialize (2026-09-10 null-guard fix)' {
 		It 'Reports an error instead of silently returning a null DataObject' {
 			# ConvertTo-Serial rejects $null outright (Mandatory parameter binding), so this
@@ -1022,7 +1131,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 					Param($ModulePath, $Reader, $Writer)
 					Import-Module $ModulePath -Force -WarningAction SilentlyContinue
 					$Cmd = & (Get-Module NamedPipe) { Get-Command Receive-Data }
-					$PI = [PSCustomObject]@{ Reader = $Reader; Writer = $Writer; InfoDisplay = 0 }
+					$PI = [PSCustomObject]@{ Reader = $Reader; Writer = $Writer; InfoDisplay = 0; FrameId = 0 }
 					& $Cmd -PipeInfo $PI
 				})
 			# (Get-Module NamedPipe).Path resolves to InitialiseModule.psm1, NOT the .psd1
@@ -1114,6 +1223,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 				Reader           = $Script:RDPipeInfo.Reader
 				Writer           = $Script:RDPipeInfo.Writer
 				InfoDisplay      = 0
+				FrameId          = 0
 				ChunkReadTimeout = 500
 			}
 
@@ -2127,9 +2237,9 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
 		$Default.Name | Should -Be 'NamedPipe'
 	}
 
-	It 'Should have Version set to 0.16' {
+	It 'Should have Version set to 0.17' {
 		$Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-		$Default.Version | Should -Be '0.16'
+		$Default.Version | Should -Be '0.17'
 	}
 }
 
