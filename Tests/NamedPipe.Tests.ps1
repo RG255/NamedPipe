@@ -973,6 +973,39 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 	}
 
 	Context 'Integrity frame (0.17)' {
+		BeforeAll {
+			# Every rejected frame below is audited (Receive-Data -> Write-MyCatchAudit) and that audit is persisted under
+			# $env:ProgramData\CatchAudit. These are synthetic refusals, so they must not add records to the machine's real log
+			# (they left "pending entries" notices on later real VHD sessions). The path is built from $env:ProgramData at call
+			# time, so redirecting it for this Context, in this test process only, keeps them in a throwaway folder.
+			$Script:RDSavedProgramData = $env:ProgramData
+			$Script:RDAuditTmp = Join-Path ([System.IO.Path]::GetTempPath()) ('np-frame-audit-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+			$null = New-Item -ItemType Directory -Path $Script:RDAuditTmp -Force
+			$env:ProgramData = $Script:RDAuditTmp
+		}
+
+		AfterAll {
+			$env:ProgramData = $Script:RDSavedProgramData
+			try { Remove-Item -LiteralPath $Script:RDAuditTmp -Recurse -Force -ErrorAction Stop } catch { Write-Host ('Could not remove the temporary audit folder {0}: {1}' -f $Script:RDAuditTmp, $_.Exception.Message) }
+		}
+
+		It 'Audits a rejected frame: the message only, never the payload, and only in the redirected log' {
+			$Payload = ConvertTo-Serial -Object ([PSCustomObject]@{ Secret = 'CANARY-PAYLOAD-0451' }) -ChunkSize 0
+			$Good = & $Script:RDFrameCmd -Payload $Payload -Id 7
+			$Bad = $Good.Substring(0, $Good.Length - 1) + $(if ($Good[-1] -eq 'A') { 'B' } else { 'A' })
+			$Job = Send-RDLinesInBackground -Raw -Lines @($Bad)
+			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
+			Wait-RDJob $Job
+			$Result.Error | Should -Match 'authentication code'
+			$AuditFile = Join-Path $env:ProgramData 'CatchAudit\CatchAudit.jsonl'
+			$AuditFile | Should -Exist
+			$Audit = Get-Content -LiteralPath $AuditFile -Raw
+			$Audit | Should -Match 'Receive-Data: pipe integrity frame rejected'
+			$Audit | Should -Not -Match ([regex]::Escape($Payload.Substring(0, 40)))
+			$Audit | Should -Not -Match 'CANARY-PAYLOAD-0451'
+			$AuditFile | Should -Not -Be (Join-Path $Script:RDSavedProgramData 'CatchAudit\CatchAudit.jsonl')
+		}
+
 		It 'Accepts a valid frame and remembers its id for the reply' {
 			$Job = Send-RDLinesInBackground -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
 			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
