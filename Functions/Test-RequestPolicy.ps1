@@ -46,7 +46,7 @@
 		- Reason  [string]  - human-readable explanation (the blocking reasons, or why it passed)
 
 		.EXAMPLE
-		Test-RequestPolicy -Request "Invoke-VHDAction -MountDisk 'True' -VHDLocation 'W:\x.vhdx'" `
+		Test-RequestPolicy -Request "Invoke-VHDAction -MountDisk 'True' -VHDLocation 'X:\x.vhdx'" `
 			-Policy @{ AllowedCommands = @('Invoke-VHDAction') }
 		Allowed = $true.
 

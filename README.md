@@ -12,7 +12,13 @@ for each operation.
 | `Start-PipeSession` | Start an elevated pipe server and return session parameters |
 | `Stop-PipeSession` | Shut down the pipe server cleanly |
 | `Test-PipeSession` | Check whether a pipe session is still alive |
-| `Send-Request` | Send a command string to the server and return the result |
+| `Send-Request` | Send a command string to the server and return the result (`-TimeoutSeconds` / `-MaxRuntimeSeconds` to bound a long request) |
+| `Get-PipeRequestStatus` | Ask the server whether it is idle or busy (works from another runspace) |
+| `Stop-PipeRequest` | Cancel the running request; the session stays open |
+| `Stop-PipeServer` | Terminate the server process (last resort for a request that cannot be cancelled) |
+
+Every line on the pipe is an authenticated, integrity-checked frame (0.17), and a request that hangs can be cancelled or its
+server killed from a non-elevated caller (0.16). See the user guide's "What's New" sections.
 
 ## Requirements
 
@@ -37,6 +43,19 @@ Then import:
 ```powershell
 Import-Module NamedPipe -RequiredVersion 0.17
 ```
+
+## Tests
+
+The Pester suite needs Pester 5. Install the module (see Installation) before running it, because tests that start a server
+process load `NamedPipe` 0.17 by name and version from your module path:
+
+```powershell
+Invoke-Pester -Path .\Tests\NamedPipe.Tests.ps1 -Output Detailed
+```
+
+Run it under both Windows PowerShell 5.1 and PowerShell 7. The tests that deliberately provoke integrity-frame rejections redirect
+`$env:ProgramData` to a temporary folder, so they do not write to your real catch-audit log. The scripts in `Tests\` named
+`Test-*.ps1` / `Start-PipeTest*.ps1` are live end-to-end checks that start real server processes (`Test-ElevatedCancel.ps1` raises one UAC prompt).
 
 ## Documentation
 

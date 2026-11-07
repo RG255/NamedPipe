@@ -38,6 +38,25 @@
     always returned to the caller, who decides what to do. Leave it off when the
     caller reports the error itself, or the same text is shown twice.
 
+    .PARAMETER TimeoutSeconds
+    Inactivity limit in seconds (0 = wait for ever, the default). Each progress message from the
+    server (Send-ProgressInfo) restarts it. On expiry the request is cancelled; if the server does
+    not honour the cancel within CancelGraceSeconds the server is killed unless NoKillOnTimeout is set.
+    A timed-out request is abandoned, not rolled back.
+
+    .PARAMETER MaxRuntimeSeconds
+    Absolute limit in seconds for the whole request (0 = none, the default). Progress messages
+    cannot extend it. Expiry is handled the same way as TimeoutSeconds.
+
+    .PARAMETER CancelGraceSeconds
+    How long, in seconds (1 to 600, default 5), to wait for the server to honour a cancel before
+    escalating to a kill.
+
+    .PARAMETER NoKillOnTimeout
+    When the cancel is not honoured, return instead of killing the server. The session then has an
+    unresolved request: Send-Request refuses further requests on it, so call Stop-PipeSession
+    (-Force if needed) and start a new session.
+
     .EXAMPLE
     $SendRequestParams.DataObject = 'Get-Process | Select-Object -First 5' |
     Send-Request @SendRequestParams

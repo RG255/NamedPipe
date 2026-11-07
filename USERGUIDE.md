@@ -59,7 +59,7 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 | Health pipe channel | A dedicated `.Health` background pipe is started automatically by `Start-PipeServerOrClient` in the server process. It listens on `PipeName.Health` using `MaxAllowedServerInstances` so concurrent health checks can connect without disrupting the main data pipe. |
 | `Test-PipeSession` rewrite | Now performs a two-phase check. Phase 1 (passive): verifies PipeInfo, `Pipe.IsConnected`, Reader, Writer, and `Writer.BaseStream` are all valid. Phase 2 (active): connects to the `.Health` pipe, sends `PING:<nonce>`, and verifies `PONG:<nonce>` is echoed back. A per-call GUID nonce prevents replay attacks. Returns `$false` immediately if Phase 1 fails. |
 | Nonce-based liveness | Phase 2 uses `[guid]::NewGuid().ToString('N')` as a per-call challenge. A squatting process cannot pass the check without relaying the exact nonce value, confirming the original server process is alive. |
-| `ModuleToLoad.Path` | `ModuleToLoad` now accepts an optional `Path` field containing the full path to the consumer module's `.psd1` file. When present, the spawned server imports by path rather than by name+version. This is required when the module lives on a network or OneDrive drive (`L:\`, etc.) that is not in `$PSModulePath` in the elevated spawned process. |
+| `ModuleToLoad.Path` | `ModuleToLoad` now accepts an optional `Path` field containing the full path to the consumer module's `.psd1` file. When present, the spawned server imports by path rather than by name+version. This is required when the module lives on a network or synced-folder drive (`X:\`, etc.) that is not in `$PSModulePath` in the elevated spawned process. |
 | Spawn path fix | `Start-PipeServerOrClient` now uses `Get-Module -Name NamedPipe \| Sort-Object Version -Descending \| Select-Object -First 1` to locate its own script file when building the spawned server command line. This replaces the previous `$MyInvocation`-based approach and is robust when multiple NamedPipe versions are simultaneously loaded in the session. |
 
 ### What's New in v0.10 (injection hardening)
@@ -770,7 +770,7 @@ migrated yet, or by a future mistake in code that has.
 
 A request like:
 ```
-Invoke-VHDAction -DestinationPath:'W:\vhd\PSimple\tvhd-p.psd1' -Data:'aGVsbG8gd29ybGQ='
+Invoke-VHDAction -DestinationPath:'X:\vhd\Sample\tvhd-p.psd1' -Data:'aGVsbG8gd29ybGQ='
 ```
 gets scanned for every QUOTED STRING VALUE (`'...'` or `"..."`) and each one's content is tested, as
 a WHOLE, for structural base64 validity (`Test-Base64String`: length must be a multiple of 4, then a
@@ -784,7 +784,7 @@ full content between a matching pair of quotes is a candidate at all.
 The first version of this feature did NOT test whole quoted values - it matched maximal RUNS of
 base64-alphabet characters anywhere in the text, splitting automatically at any character outside
 that alphabet. This looked reasonable but was wrong, and it was caught by a real Pester test failure,
-not by review: a completely ordinary, non-secret path like `'W:\vhd\PSimple\tvhd-p.psd1'` contains no
+not by review: a completely ordinary, non-secret path like `'X:\vhd\Sample\tvhd-p.psd1'` contains no
 base64-invalid characters within some of its own pieces once you fragment it at `\`, `:`, `-`, and
 `.` - so `tvhd`, `psd1`, and `vhdx` each got tested ALONE, and each one happens to be 4 characters of
 pure base64-alphabet content, which decodes without error every time (any 4-character string drawn
@@ -1159,7 +1159,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.16' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.17' }
     )
 }
 ```
@@ -1357,7 +1357,7 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.16   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.17   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
 
@@ -1436,11 +1436,22 @@ function call opens a new server instead of reusing the existing one.
 in the calling script. See the "Sharing a Session Across Multiple Calls" section.
 
 ### "Module not found" or wrong module version in the elevated server
-**Cause**: The consumer module is installed on a network or OneDrive drive (e.g. `L:\`) that
+**Cause**: The consumer module is installed on a network or synced-folder drive (e.g. `X:\`) that
 is not mapped in the elevated spawned process's `$PSModulePath`. Import by name silently fails
 and PowerShell may autoload an older version of the same module.
 **Solution**: Pass the full `.psd1` path in `ModuleToLoad.Path` (resolved on the client side
 where the drive is mapped). See the "ModuleToLoad.Path" section under Consumer Module Import.
+
+### "Pipe frame rejected ..." or "Receive-Data: ... frame id ..." (v0.17+)
+**Cause**: A line on the data pipe failed the integrity check (see "What's New in v0.17"). Most often the client window
+loaded NamedPipe before it was updated and is talking to a freshly started server of a different build.
+**Solution**: Close the client PowerShell window and any server window it started, open a fresh window and retry. If it
+recurs from a fresh session, keep the catch-audit record (`Get-MyCatchAuditLog`) and report it; do not just retry.
+
+### "Send-Request: an earlier timed request on this session is still unresolved ..." (v0.17+)
+**Cause**: An earlier `Send-Request -NoKillOnTimeout` timed out and the server did not honour the cancel, so its answer is
+still pending on the pipe. `Send-Request` refuses to send another request rather than hand you the earlier request's answer.
+**Solution**: `Stop-PipeSession` (add `-Force` if it does not close) and start a new session. The message is returned in `.Error`.
 
 ### Migrating from v0.2
 **Problem**: Scripts written for v0.2 call `Start-PipeServerOrClient` directly.

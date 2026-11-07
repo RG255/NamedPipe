@@ -16,7 +16,7 @@ BeforeAll {
 Describe 'Test-RequestPolicy - allowed shapes' {
 
 	It 'allows the dispatch shape VHDTools actually sends' {
-		$r = Test-RequestPolicy -Request "Invoke-VHDAction -MountDisk 'True' -VHDLocation 'W:\x.vhdx'" -Policy $Script:Policy
+		$r = Test-RequestPolicy -Request "Invoke-VHDAction -MountDisk 'True' -VHDLocation 'X:\x.vhdx'" -Policy $Script:Policy
 		$r.Allowed | Should -BeTrue -Because $r.Reason
 	}
 
@@ -83,7 +83,7 @@ Describe 'Test-RequestPolicy - default-deny catches what a blocklist misses' {
 	}
 
 	It 'blocks a computed (interpolated) string argument by default' {
-		$r = Test-RequestPolicy -Request "Invoke-VHDAction -VHDLocation `"W:\`$(whoami).vhdx`"" -Policy $Script:Policy
+		$r = Test-RequestPolicy -Request "Invoke-VHDAction -VHDLocation `"X:\`$(whoami).vhdx`"" -Policy $Script:Policy
 		$r.Allowed | Should -BeFalse -Because 'embedded $() must be rejected in strict mode'
 	}
 

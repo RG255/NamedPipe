@@ -26,7 +26,7 @@
 			Creates a PipeSecurity object granting ReadWrite access to the specified user.
 
 			.EXAMPLE
-			Set-PipeSecurity -AccessIdentifier @('Ray:Allow:ReadWrite', 'Administrators:Allow:ReadWrite')
+			Set-PipeSecurity -AccessIdentifier @('alice:Allow:ReadWrite', 'Administrators:Allow:ReadWrite')
 			Creates a PipeSecurity object with multiple access rules.
 
 			.INPUTS
@@ -50,7 +50,7 @@
 			Everyone
 			$ar  += [IO.Pipes.PipeAccessRule]::new([Security.Principal.SecurityIdentifier]::new(([Security.Principal.WellKnownSidType]::WorldSid),$Null), 'ReadWrite', 'Allow')
 			A specific User
-			$ar  += [IO.Pipes.PipeAccessRule]::new("ray", 'ReadWrite', 'Allow')
+			$ar  += [IO.Pipes.PipeAccessRule]::new("alice", 'ReadWrite', 'Allow')
 			A specific group
 			$ar  += [IO.Pipes.PipeAccessRule]::new("Users", 'ReadWrite', 'Allow')
 			Well know SID's e.g. Authenticated users

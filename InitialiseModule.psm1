@@ -197,9 +197,9 @@ try
 				Description                    Rays set of useful functions                                                                                                               
 				CLRVersion                                                                                                                                                                
 				CmdletsToExport                *                                                                                                                                          
-				Copyright                      (c) 2022 RayG. All rights reserved.                                                                                                        
-				CompanyName                    RayG                                                                                                                                       
-				Author                         RayG                                                                                                                                       
+				Copyright                      (c) 2022 RG255. All rights reserved.                                                                                                        
+				CompanyName                    RG255                                                                                                                                      
+				Author                         RG255                                                                                                                                      
 				FileList                       {}                                                                                                                                         
 				PowerShellHostName                                                                                                                                                        
 				PowerShellVersion              3.0                                                                                                                                        

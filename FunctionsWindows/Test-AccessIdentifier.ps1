@@ -28,8 +28,8 @@
 		Format: 'Identity:AllowOrDeny:AccessRight'
 
 		.EXAMPLE
-		'Ray:Allow:ReadWrite' | Test-AccessIdentifier
-		Validates and returns the access identifier if the user 'Ray' exists.
+		'alice:Allow:ReadWrite' | Test-AccessIdentifier
+		Validates and returns the access identifier if the user 'alice' exists.
 
 		.EXAMPLE
 		@('DOMAIN\User:Allow:ReadWrite', 'Administrators:Allow:ReadWrite') | Test-AccessIdentifier

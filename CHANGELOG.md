@@ -28,6 +28,12 @@ Theme: the data pipe now checks that what arrives is what was sent, and that a r
 - `Send-Request` refuses to send while an earlier timed request on the same session is still unresolved (`-NoKillOnTimeout` with an
   unhonoured cancel), returning an error that says to start a new session, instead of desynchronising the stream.
 
+### Tests (2026-11-06)
+
+- The integrity-frame refusal tests (8 of them) redirect `$env:ProgramData` to a temporary folder for their duration, so they no longer
+  add synthetic records to the machine's real catch-audit log; one new test asserts the audit record is written to the redirected
+  log and carries the message only. No module code changed.
+
 ## Version 0.16 - 2026-10-13 (supersedes 0.15)
 
 Theme: a request that loops or blocks on console input in a hidden elevated server can now be recovered from a
@@ -106,7 +112,7 @@ VHDTools mount operation.
 here rather than glossing over**: the first version of the new check matched maximal RUNS of
 base64-alphabet characters anywhere in the text instead of whole quoted values. This fragmented at
 every non-base64 character (`\`, `:`, `-`, `.`, `$`), so an entirely ordinary, non-secret quoted path
-like `'W:\vhd\PSimple\tvhd-p.psd1'` lost several short fragments (`tvhd`, `psd1`, `vhdx`) to false
+like `'X:\vhd\Sample\tvhd-p.psd1'` lost several short fragments (`tvhd`, `psd1`, `vhdx`) to false
 positives, along with a 20-character parameter name (`CheckGroupMembership`) and this module's own
 `-Data:$Data` marker text - six false positives in one realistic command line. Caught by a real
 Pester test failure (not by review), and fixed by testing whole quoted values instead, since a real

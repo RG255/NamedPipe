@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-Window.ps1 by Sync-SharedUtilities [SHA256 DF339B454DBA43D5A0C7237BDB0A976FA5E6B9F9326B5FFF0EB7154D574B201E] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Set-Window.ps1 by Sync-SharedUtilities [SHA256 53975424B0BB25A693F7EF5F620AEEE944394622AD78F14D85FF54A7C3F3270E] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Set-Window
 {
 	<#
@@ -61,7 +61,7 @@ Function Set-Window
 
 		.NOTES
 		Version: 1.28 2026-02-01
-		Based on original by Boe Prox (11/24/2015), re-written by RayG.
+		Based on original by Boe Prox (11/24/2015), rewritten for this module.
 	#>
 
 	[OutputType('System.Automation.WindowInfo')]

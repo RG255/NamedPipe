@@ -1787,7 +1787,7 @@ Describe 'Test-Base64String' -Tag 'RedactPotentialSecrets' {
 		Mock Write-MyCatchAudit -ModuleName NamedPipe -MockWith { }
 		# 4 characters (passes the length check) but not base64: reaches FromBase64String and fails there.
 		Test-Base64String -Value 'a!c$' | Should -BeFalse
-		Test-Base64String -Value 'W:\v' | Should -BeFalse
+		Test-Base64String -Value 'X:\v' | Should -BeFalse
 		Should -Invoke Write-MyCatchAudit -ModuleName NamedPipe -Times 0 -Exactly
 	}
 }
@@ -1833,7 +1833,7 @@ Describe 'Get-SBResult - RedactPotentialSecrets display transform' -Tag 'RedactP
 		unchanged - a QUOTED PATH containing non-base64 characters (\, :, -, .) fails as a WHOLE and is
 		never fragmented into short pieces that might accidentally validate on their own (this is the
 		exact bug the first version of this mechanism had - see this Describe block''s own comment)' {
-		$Text = "Invoke-VHDAction  -DestinationPath:'W:\vhd\PSimple\tvhd-p.psd1' -VHDLocation:'W:\vhd\PSimple\tvhd-p.vhdx' -Action:'Invoke' -CheckGroupMembership:`$True"
+		$Text = "Invoke-VHDAction  -DestinationPath:'X:\vhd\Sample\tvhd-p.psd1' -VHDLocation:'X:\vhd\Sample\tvhd-p.vhdx' -Action:'Invoke' -CheckGroupMembership:`$True"
 		Protect-TestDisplayText -Text $Text | Should -Be $Text
 	}
 
@@ -1912,10 +1912,10 @@ Describe 'Get-SBResult - RedactPotentialSecrets end-to-end gating (real function
 		$Options = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{ $StrInfoDisplay = $InfoDisplayBitProgress }
 		$Global:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Options
 
-		$DataObject = @{ Request = "Test-EchoValue -Value 'W:\vhd\PSimple\tvhd-p.psd1'" }
+		$DataObject = @{ Request = "Test-EchoValue -Value 'X:\vhd\Sample\tvhd-p.psd1'" }
 		$null = Get-SBResult -DataObject $DataObject
 
-		$Script:CapturedConsoleString | Should -Match ([regex]::Escape("Test-EchoValue -Value 'W:\vhd\PSimple\tvhd-p.psd1'"))
+		$Script:CapturedConsoleString | Should -Match ([regex]::Escape("Test-EchoValue -Value 'X:\vhd\Sample\tvhd-p.psd1'"))
 	}
 }
 

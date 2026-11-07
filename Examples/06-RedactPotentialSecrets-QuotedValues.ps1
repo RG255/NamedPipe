@@ -9,7 +9,7 @@
 	that check matched maximal runs of base64-alphabet characters ANYWHERE in the display text - this
 	was wrong, found live via a real Pester failure: a run-based match fragments at every non-base64
 	character (\, :, -, ., $), so an ordinary, obviously-non-secret quoted PATH like
-	'W:\vhd\PSimple\tvhd-p.psd1' got broken into pieces ('tvhd', 'psd1'...) and several short fragments
+	'X:\vhd\Sample\tvhd-p.psd1' got broken into pieces ('tvhd', 'psd1'...) and several short fragments
 	happened to decode without error on their own - a single realistic command line lost SIX separate
 	words to false positives this way, including a 20-character parameter name
 	(CheckGroupMembership) and NamedPipe's own '-Data:$Data' marker text.
@@ -67,7 +67,7 @@ Try
 		# Deliberately shaped like this module's own real elevated dispatch requests - a path, a GUID-
 		# free parameter name, and a boolean - none of which are secrets, all of which are quoted or
 		# bare exactly as a real VHDTools/VaultTools request would build them.
-		$Private:Cmd = "Test-EchoValue -Value 'W:\vhd\PSimple\tvhd-p.psd1'"
+		$Private:Cmd = "Test-EchoValue -Value 'X:\vhd\Sample\tvhd-p.psd1'"
 		Write-Host ('Sending: {0}' -f $Private:Cmd) -ForegroundColor Yellow
 		Write-Host 'Watch the server''s own console window - the echoed request should read IDENTICAL to the line above.' -ForegroundColor Cyan
 		$SendRequestParams1.$StrDataObject = $Private:Cmd | Send-Request @SendRequestParams1

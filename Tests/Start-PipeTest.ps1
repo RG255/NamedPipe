@@ -306,7 +306,7 @@ function Invoke-RequiredActions
   Send-Request @SendRequestParams
 	#start-sleep -Seconds 5
 	#$SendRequestParams.DataObject = 'Get-MyDiskInfo -disknumber 0 '| Send-Request @SendRequestParams
-	#D:\PowerShellScripts\DisplayMyDisks\Display-MyDisks.ps1 -DiskInfo $SendRequestParams.DataObject.Result -sdisk
+	#.\Display-MyDisks.ps1 -DiskInfo $SendRequestParams.DataObject.Result -sdisk
 
 	#Start-Sleep -Seconds 5
 

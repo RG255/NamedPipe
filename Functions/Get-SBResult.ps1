@@ -212,7 +212,7 @@
 			# 2026-09-19 CORRECTED DESIGN: the first version of this matched maximal RUNS of
 			# base64-alphabet characters ANYWHERE in the text - this was wrong, found live via a real
 			# Pester failure. A run-based match fragments at every non-base64 character (\, :, -, ., $),
-			# so a whole, obviously-non-base64 quoted PATH like 'W:\vhd\PSimple\tvhd-p.psd1' got broken
+			# so a whole, obviously-non-base64 quoted PATH like 'X:\vhd\Sample\tvhd-p.psd1' got broken
 			# into pieces ('tvhd', 'psd1', 'vhdx'...) and several of those short fragments happened to
 			# decode without error on their own - a single realistic command line lost SIX separate
 			# words to false positives this way, including the parameter name 'CheckGroupMembership'
