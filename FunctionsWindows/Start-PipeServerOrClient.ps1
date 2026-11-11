@@ -193,6 +193,19 @@ Function Start-PipeServerOrClient
 			#     not quote array elements, it just space-joins them, so the path splits again.
 			# With -File the path is a discrete parameter value, so the double quotes survive.
 			$Private:ServerArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Spawned -SerialData {1}' -f $Private:ServerScript, (ConvertTo-Serial -Object $ServerClientParams)
+			If ($ProcessVerb -eq 'RunAs' -and -not $Script:ServerCodePathWarned)
+			{
+				# The elevated server loads NamedPipe and the consumer module from these folders; warn once per process
+				# when a standard user could modify them (deployed Program Files copies are admin-only and stay silent).
+				$Private:Untrusted = @(Test-ServerCodePathTrusted -Path $Private:npModule.ModuleBase)
+				$Private:ConsumerPath = $ServerClientParams.ModuleToLoad.Path
+				If ($Private:ConsumerPath) { $Private:Untrusted += @(Test-ServerCodePathTrusted -Path (Split-Path -Path $Private:ConsumerPath -Parent)) }
+				If ($Private:Untrusted.Count -gt 0)
+				{
+					$Script:ServerCodePathWarned = $true
+					Write-Warning ('NamedPipe: the elevated server will load code from a location that is not admin-only ({0}). Deploy the modules (Program Files) for elevated use. First finding: {1}' -f $Private:Untrusted.Count, $Private:Untrusted[0])
+				}
+			}
 			$ProcessInfo = @{
 				FilePath     = $Executable
 				Passthru     = $True
@@ -335,7 +348,7 @@ Function Start-PipeServerOrClient
 					do
 					{
 						# some other stuff here while waiting for connection
-						Start-Sleep -Milliseconds 500
+						if ($conn.AsyncWaitHandle.WaitOne(100)) { $source.Dispose() }  # task handle: connection noticed as soon as it arrives
 					}
 					until ($conn.IsCompleted)
 					If ($conn.IsCanceled -or $conn.IsFaulted -or -not $ServerClientParams.$StrPipeInfo.$StrPipe.IsConnected)
@@ -405,7 +418,7 @@ Function Start-PipeServerOrClient
 								}
 							}
 						}
-						ElseIf ($Private:PresentedNonce -eq $ServerClientParams.$StrNonce)
+						ElseIf (Test-ConstantTimeEqual -Left ([string]$Private:PresentedNonce) -Right ([string]$ServerClientParams.$StrNonce))
 						{
 							$Private:_admit = $true
 							If ($ServerClientParams.$StrInfoDisplay -band 4)
@@ -455,13 +468,17 @@ Function Start-PipeServerOrClient
 							$StopClient.Connect(1000)
 							$StopWriter = [System.IO.StreamWriter]::new($StopClient)
 							$StopWriter.AutoFlush = $true
-							$StopWriter.WriteLine('STOP')
+							# The listener only honours a STOP that carries the session's command token.
+							$StopWriter.WriteLine('STOP:' + [string](Get-PipeCommandToken -Nonce ([string]$ServerClientParams.$StrNonce)))
 							$StopClient.Dispose()
 						}
 						catch
 						{
 							if ($ServerClientParams.$StrInfoDisplay -band $InfoDisplayBitDebug)
 							{ Write-Host "DEBUG Stop-HealthPipe: Failed to send STOP: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+							# Expected outcome: the listener is already gone (connect times out / pipe closed). Anything else is recorded.
+							if ($_.Exception.Message -notmatch 'timed out|All pipe instances|pipe (is )?(broken|closed)|no process is on the other end')
+							{ Write-MyCatchAudit -Source 'Stop-HealthPipe: send the STOP signal to the health listener - unexpected failure' -ErrorRecord $_ -Teardown }
 						}
 						Start-Sleep -Milliseconds 200
 						if ($HealthCts)
@@ -586,6 +603,7 @@ Function Start-PipeServerOrClient
 								}
 							}
 							catch { $sec = $null }
+							$failCount = 0
 							while ($true)
 							{
 								$pipe = $null
@@ -600,7 +618,7 @@ Function Start-PipeServerOrClient
 												[System.IO.Pipes.PipeDirection]::InOut,
 												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
 												[System.IO.Pipes.PipeTransmissionMode]::Byte,
-												[System.IO.Pipes.PipeOptions]::None,
+												[System.IO.Pipes.PipeOptions]::Asynchronous,
 												0, 0, $sec
 											)
 										}
@@ -611,7 +629,7 @@ Function Start-PipeServerOrClient
 												[System.IO.Pipes.PipeDirection]::InOut,
 												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
 												[System.IO.Pipes.PipeTransmissionMode]::Byte,
-												[System.IO.Pipes.PipeOptions]::None
+												[System.IO.Pipes.PipeOptions]::Asynchronous
 											)
 										}
 									}
@@ -624,7 +642,7 @@ Function Start-PipeServerOrClient
 												[System.IO.Pipes.PipeDirection]::InOut,
 												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
 												[System.IO.Pipes.PipeTransmissionMode]::Byte,
-												[System.IO.Pipes.PipeOptions]::None,
+												[System.IO.Pipes.PipeOptions]::Asynchronous,
 												0, 0, $sec
 											)
 										}
@@ -635,7 +653,7 @@ Function Start-PipeServerOrClient
 												[System.IO.Pipes.PipeDirection]::InOut,
 												[System.IO.Pipes.NamedPipeServerStream]::MaxAllowedServerInstances,
 												[System.IO.Pipes.PipeTransmissionMode]::Byte,
-												[System.IO.Pipes.PipeOptions]::None
+												[System.IO.Pipes.PipeOptions]::Asynchronous
 											)
 										}
 									}
@@ -643,10 +661,32 @@ Function Start-PipeServerOrClient
 									$hReader = [System.IO.StreamReader]::new($pipe)
 									$hWriter = [System.IO.StreamWriter]::new($pipe)
 									$hWriter.AutoFlush = $true
-									$msg = $hReader.ReadLine()
-									if ($msg -eq 'STOP')
+									$failCount = 0
+									# A peer that connects and sends nothing must not hold the listener: the read is bounded and
+									# the connection is dropped (msg stays $null, so nothing below acts on it).
+									$readTask = $hReader.ReadLineAsync()
+									$msg = $null
+									if ($readTask.Wait(3000)) { $msg = $readTask.Result }
+									if ($msg -and ($msg -eq 'STOP' -or $msg.StartsWith('STOP:')))
 									{
-										# Poison pill - exit the health loop cleanly.
+										# Poison pill - exit the health loop cleanly. It must carry the command token (STOP:<token>);
+										# only a session with no token at all (no nonce) accepts a bare STOP.
+										$stopTok = if ($msg.Length -gt 5) { $msg.Substring(5) } else { '' }
+										$stopOk = (-not $CmdToken)
+										if ($CmdToken -and $stopTok.Length -eq $CmdToken.Length)
+										{
+											$sdiff = 0
+											for ($si = 0; $si -lt $CmdToken.Length; $si++)
+											{ $sdiff = $sdiff -bor ([int]$stopTok[$si] -bxor [int]$CmdToken[$si]) }
+											$stopOk = ($sdiff -eq 0)
+										}
+										if (-not $stopOk)
+										{
+											$State.DeniedCount = [int]$State.DeniedCount + 1
+											Write-HealthEvent 4513 ('NamedPipe health pipe (PID {0}): STOP REFUSED - wrong or missing command token (refusal #{1}).' -f $PID, $State.DeniedCount)
+											$hWriter.WriteLine('DENIED')
+											continue
+										}
 										break
 									}
 									if ($msg -and $msg.StartsWith('PING:'))
@@ -723,8 +763,11 @@ Function Start-PipeServerOrClient
 								}
 								catch
 								{
-									if ($CatchAuditAvailable)
+									# Back-off: a pipe that keeps failing must not spin the CPU or append a record per pass.
+									$failCount++
+									if ($CatchAuditAvailable -and ($failCount -le 3 -or ($failCount % 100) -eq 0))
 									{ Write-HealthPipeCatchRecord -PersistPath $PersistPath -Source 'Health pipe listener: WaitForConnection/read/respond cycle' -ErrorRecord $_ }
+									Start-Sleep -Milliseconds ([int][Math]::Min(5000, 50 * [Math]::Pow(2, [Math]::Min($failCount, 7))))
 								}
 								finally
 								{

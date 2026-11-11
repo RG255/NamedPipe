@@ -2,6 +2,33 @@
 
 ## Version 0.17 - 2026-11-04 (supersedes 0.16)
 
+- 2026-11-08: Fixed (shared utilities): request parameter values are now always quoted and escaped when the server rebuilds the command (previously some unusual text could escape the quoting). Only a real boolean or `[switch]` becomes `$True`/`$False`; the STRINGS `'true'`/`'false'` now arrive as text, not as booleans. Also: errors from string-compiled code (such as pipe-server scriptblocks) are no longer dropped from the catch-audit log; the audit triage no longer deletes entries that arrive while it prompts; `Assert-File`/`Assert-Folder` fixes for bare names and wildcard characters.
+
+- 2026-11-08: Catch-audit spill file: entries a non-elevated session cannot persist are saved to `C:\ProgramData\CatchAudit\Spill` and imported by an elevated reader or deploy (Origin=Spill). The pipe health record writer (`Write-HealthPipeCatchRecord`) is separate and unchanged.
+- 2026-11-08: Fixed: `Protect-MyFunctionTraceFolder -Check` wrongly reported the function-trace folder as locked down when Users had an inheritable allow (or any allow wider than list + add a file); it now reports it as NOT locked down. Applying it was never affected.
+
+### Fixed (independent code review, 2026-11-10; no protocol or option change)
+
+- Health pipe: all commands, including the internal stop signal, are now authenticated the same way; the listener's reads are
+  time-bounded and it backs off when pipe creation keeps failing instead of retrying at full speed.
+- `Test-PipeSession` and the command helpers bound their write as well as the reply wait and return `$false` / `<no reply>` on timeout.
+- Starting an elevated server from a location that is not administrator-only (for example a working tree rather than the deployed
+  Program Files copy) now prints a one-time warning. Nothing is blocked.
+- `Get-SBResult`: `Parameters` may be a string, a hashtable, an ordered dictionary or a PSCustomObject; any other type is now reported as
+  an error instead of silently running the command with no arguments. `Get-SBResult -Command` works and returns the DataObject.
+- `Test-AccessIdentifier`: the 1-part and 2-part forms (`'Users'`, `'Users:Deny'`) now complete correctly.
+- `ChunkSize` 0 (no chunking) is honoured instead of becoming 32768.
+- `Receive-Data` no longer reads, returns or modifies the caller's own `$DataObject` after a failed read, and drops the partial chunk
+  buffer of an aborted chunked transfer.
+- The capability nonce comparison is constant-time; verbose displays no longer print the nonce, frame key, command token or the
+  serialized session on the spawn command line.
+- `Exit-Pipe`: `-DataObject` is position 0 and `-PipeInfo` position 1. Importing the module no longer clears the caller's `$Error`, and
+  an import failure reports the error that stopped it.
+- The server's connection wait no longer sleeps in 500 ms steps and disposes its cancellation source.
+- Help: `Test-RequestPolicy` `AllowComputedArguments` now says what it permits (variable interpolation in double-quoted strings).
+- The server's diagnostics-log writer and its retention sweep leave a redirected (junction/symlink) log folder alone.
+- Tests: `Tests\Hardening.Tests.ps1` (30 tests; they mock the catch-audit writer). Suite total 303 per host.
+
 Theme: the data pipe now checks that what arrives is what was sent, and that a response belongs to the request in flight.
 
 ### Changed (wire format - both ends are always the same module version, so there is no fallback to unframed lines)

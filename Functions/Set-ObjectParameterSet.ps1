@@ -106,7 +106,7 @@
 					{$MyParameters.$StrWindowStyle}
 					Else
 					{$StrMinimized}
-					$StrChunkSize = if ($MyParameters.$StrChunkSize)
+					$StrChunkSize = if ($null -ne $MyParameters.$StrChunkSize)
 					{[int]$MyParameters.$StrChunkSize}
 					Else
 					{[int]32768}  # Default 32KB chunk size for automatic chunking
@@ -204,9 +204,9 @@
 						{$True}
 						Else
 						{$False}
-						$StrChunkSize = if ($MyParameters.$StrChunkSize)
+						$StrChunkSize = if ($null -ne $MyParameters.$StrChunkSize)
 						{[int]$MyParameters.$StrChunkSize}
-						Elseif ($MyOptions.$StrChunkSize)
+						Elseif ($null -ne $MyOptions.$StrChunkSize)
 						{[int]$MyOptions.$StrChunkSize}
 						Else
 						{[int]32768}  # Default 32KB chunk size
@@ -325,9 +325,9 @@
 						{$True}
 						Else
 						{$False}
-						$StrChunkSize = if ($MyParameters.$StrChunkSize)
+						$StrChunkSize = if ($null -ne $MyParameters.$StrChunkSize)
 						{[int]$MyParameters.$StrChunkSize}
-						Elseif ($MyOptions.$StrChunkSize)
+						Elseif ($null -ne $MyOptions.$StrChunkSize)
 						{[int]$MyOptions.$StrChunkSize}
 						Else
 						{[int]32768}  # Default 32KB chunk size

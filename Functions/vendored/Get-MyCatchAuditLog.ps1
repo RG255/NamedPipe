@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Get-MyCatchAuditLog.ps1 by Sync-SharedUtilities [SHA256 707330E9E05389E6C971417A358C8FB4A4E7E8C473AC175F45BACA9B8F9D9504] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Get-MyCatchAuditLog.ps1 by Sync-SharedUtilities [SHA256 DCA4842470F154702A0B6AA80059BE2C899A5CCBE242B18EBFF0C9FB9376532B] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Get-MyCatchAuditLog
 {
 	<#
@@ -18,6 +18,12 @@ Function Get-MyCatchAuditLog
 		in-memory capture on every Write-MyCatchAudit call and survives independently of any one
 		process. Use -Persisted to answer "did ANYTHING get caught, possibly in a session that has
 		already ended" - the question the in-memory view can never answer after the fact.
+
+		2026-11-08: when the caller is ELEVATED, both modes first import the spill files (see
+		Import-MyCatchAuditSpill): entries that non-elevated processes could not write to the persisted log are
+		appended to it, tagged Origin='Spill' (with SpillFile, SpillOwner, ImportedAt), after validation, and the
+		consumed spill files are archived under Spill\Imported. No switch is needed; a non-elevated caller imports
+		nothing. -Persisted shows an Id once even if a relayed copy and an imported copy both reached the file.
 
 		.PARAMETER Clear
 		Default (in-memory) mode only: also empties the in-memory log after returning it - use for "what
@@ -48,12 +54,25 @@ Function Get-MyCatchAuditLog
 	[OutputType([PSCustomObject[]])]
 	Param ([Switch]$Clear, [Switch]$Persisted)
 
+	# 2026-11-08: when ELEVATED, first import any catch-audit entries that non-elevated processes saved to the spill
+	# folder (Import-MyCatchAuditSpill - does nothing unless elevated, never throws, labels each Origin='Spill').
+	# Guarded so an older vendored copy without the helper behaves as before.
+	Try
+	{
+		If (Get-Command -Name Import-MyCatchAuditSpill -CommandType Function -ErrorAction SilentlyContinue)
+		{ $null = Import-MyCatchAuditSpill }
+	}
+	Catch { Write-MyCatchAudit -Source 'Get-MyCatchAuditLog: import spilled catch-audit entries' -ErrorRecord $_ }
+
 	If ($Persisted)
 	{
 		$Private:_path = Get-MyCatchAuditPersistPath
 		If (-not (Test-Path -LiteralPath $Private:_path -PathType Leaf)) { return @() }
 		Try
 		{
+			# A relayed entry and its spill copy can both reach the file (relay after import); Triage removes by Id, so
+			# a repeat of an Id is shown once.
+			$SeenIds = New-Object 'System.Collections.Generic.HashSet[String]' ([StringComparer]::OrdinalIgnoreCase)
 			return @(Get-Content -LiteralPath $Private:_path -ErrorAction Stop |
 					Where-Object { $_ } |
 					ForEach-Object {
@@ -63,7 +82,8 @@ Function Get-MyCatchAuditLog
 						# the surrounding Where-Object { $_ } drops the resulting $null, same as an empty line.
 						Catch { $null }
 					} |
-					Where-Object { $_ })
+					Where-Object { $_ } |
+					Where-Object { (-not $_.Id) -or $SeenIds.Add([String]$_.Id) })
 		}
 		Catch { return @() }
 	}

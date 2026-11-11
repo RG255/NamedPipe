@@ -36,9 +36,9 @@
 		- AllowedCommands  [string[]] : bare command names that may be called (default: none = deny all
 		  command calls). Case-insensitive.
 		- AllowComputedArguments [bool] : when $true, permit expandable ("double quoted") strings that
-		  contain embedded $(...) subexpressions. Default $false (strict): argument values must be
-		  literals/variables, never computed. Note this does NOT open up arithmetic/format/sub-expression
-		  arguments - those remain blocked; it only relaxes embedded-expression strings.
+		  interpolate variables (for example "prefix $name"). Default $false (strict): argument values must be
+		  literals or plain variables. Sub-expressions $(...), arithmetic and format arguments remain
+		  blocked either way; the flag only relaxes variable interpolation inside double-quoted strings.
 
 		.OUTPUTS
 		PSCustomObject with:

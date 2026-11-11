@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Show-MyCatchAuditPendingNotice.ps1 by Sync-SharedUtilities [SHA256 F6CD95045C3E026D851023792EF6EEE361D955452047B405F15B0019B84C7EA3] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Show-MyCatchAuditPendingNotice.ps1 by Sync-SharedUtilities [SHA256 DBBEC3C76CF67659D17282855E71C1B5377859A992267CA6FB46DD77D928F13A] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Show-MyCatchAuditPendingNotice
 {
 	<#
@@ -45,16 +45,30 @@ Function Show-MyCatchAuditPendingNotice
 	If ($Global:MyCatchAuditNoticeShown) { return }
 
 	$Private:_path = Get-MyCatchAuditPersistPath
-	If (-not (Test-Path -LiteralPath $Private:_path -PathType Leaf)) { return }
+	$Private:_lineCount = 0
+	If (Test-Path -LiteralPath $Private:_path -PathType Leaf)
+	{
+		Try { $Private:_lineCount = @(Get-Content -LiteralPath $Private:_path -ErrorAction Stop | Where-Object { $_ }).Count }
+		Catch { $Private:_lineCount = 0 }
+	}
 
-	Try { $Private:_lineCount = @(Get-Content -LiteralPath $Private:_path -ErrorAction Stop | Where-Object { $_ }).Count }
-	Catch { return }
-	If ($Private:_lineCount -eq 0) { return }
+	# 2026-11-08: entries saved to the spill folder by sessions that could not write the persisted log are unresolved
+	# too, until an elevated Get-MyCatchAuditLog / deploy imports them. Counted here, never imported (this stays a pure
+	# read). Guarded so an older vendored copy without the helper behaves as before.
+	$Private:_spillPending = 0
+	If (Get-Command -Name Read-MyCatchAuditSpill -CommandType Function -ErrorAction SilentlyContinue)
+	{ $Private:_spillPending = @((Read-MyCatchAuditSpill).Entries).Count }
+
+	$Private:_total = $Private:_lineCount + $Private:_spillPending
+	If ($Private:_total -eq 0) { return }
 
 	# Set the flag ONLY once there is something real to report - an unreadable/empty file should not
 	# permanently suppress a LATER module's check within the same process (e.g. the file could still be
 	# mid-write by another process the first time this ran).
 	$Global:MyCatchAuditNoticeShown = $true
-	Write-Warning -Message ('{0} unresolved catch-audit entr{1} recorded (possibly from an earlier session) - run Show-MyCatchAuditSummary -Persisted to review, then Invoke-MyCatchAuditTriage or Clear-MyCatchAuditLog once triaged.' -f `
-		$Private:_lineCount, $(If ($Private:_lineCount -eq 1) { 'y' } Else { 'ies' }))
+	$Private:_spillText = ''
+	If ($Private:_spillPending -gt 0)
+	{ $Private:_spillText = (' {0} of them pending import from the spill folder: run Get-MyCatchAuditLog from an elevated window (or deploy the modules) to import them.' -f $Private:_spillPending) }
+	Write-Warning -Message ('{0} unresolved catch-audit entr{1} recorded (possibly from an earlier session) - run Show-MyCatchAuditSummary -Persisted to review, then Invoke-MyCatchAuditTriage or Clear-MyCatchAuditLog once triaged.{2}' -f `
+			$Private:_total, $(If ($Private:_total -eq 1) { 'y' } Else { 'ies' }), $Private:_spillText)
 }

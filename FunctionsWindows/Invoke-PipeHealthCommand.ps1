@@ -60,12 +60,13 @@
 	$Private:Client = $null
 	Try
 	{
-		$Private:Client = [System.IO.Pipes.NamedPipeClientStream]::new('.', ($PipeInfo.$StrName + '.Health'), [System.IO.Pipes.PipeDirection]::InOut)
+		$Private:Client = [System.IO.Pipes.NamedPipeClientStream]::new('.', ($PipeInfo.$StrName + '.Health'), [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::Asynchronous)
 		$Private:Client.Connect($TimeoutMs)
 		$Private:Writer = [System.IO.StreamWriter]::new($Private:Client)
 		$Private:Writer.AutoFlush = $true
 		$Private:Reader = [System.IO.StreamReader]::new($Private:Client)
-		$Private:Writer.WriteLine($Private:Line)
+		$Private:WriteTask = $Private:Writer.WriteLineAsync($Private:Line)
+		If (-not $Private:WriteTask.Wait($TimeoutMs)) { return '<no reply>' }
 		$Private:Task = $Private:Reader.ReadLineAsync()
 		If ($Private:Task.Wait($TimeoutMs)) { [string]$Private:Task.Result } Else { '<no reply>' }
 	}

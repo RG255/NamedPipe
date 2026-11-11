@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Clear-MyCatchAuditLog.ps1 by Sync-SharedUtilities [SHA256 9C32C77CC613B1D46C11BB6B70CA5C329ECF59B6C55148DAC629DBA654E120D0] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Clear-MyCatchAuditLog.ps1 by Sync-SharedUtilities [SHA256 4E98C081257F2BCFDED58DAFB6B8CB505DF08A8673EBF24EE4F7A4DC7D54BC18] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Clear-MyCatchAuditLog
 {
 	<#
@@ -40,6 +40,15 @@ Function Clear-MyCatchAuditLog
 
 	$Private:_archivePath = Join-Path -Path (Split-Path -Path $Private:_path -Parent) `
 		-ChildPath ('CatchAudit-Archived-{0}.jsonl' -f ([DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')))
+
+	# Two clears within one second would otherwise share a name and Move-Item -Force would overwrite the first archive.
+	$Private:_suffix = 1
+	While (Test-Path -LiteralPath $Private:_archivePath)
+	{
+		$Private:_archivePath = Join-Path -Path (Split-Path -Path $Private:_path -Parent) `
+			-ChildPath ('CatchAudit-Archived-{0}-{1}.jsonl' -f ([DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')), $Private:_suffix)
+		$Private:_suffix++
+	}
 
 	If ($PSCmdlet.ShouldProcess($Private:_path, 'Archive and clear the persisted catch-audit log'))
 	{

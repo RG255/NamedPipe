@@ -72,6 +72,25 @@
 			{$Private:Msg = '{1} {0}' -f ''.PadRight(40, '-'), $Private:Stamp}
 			Write-Information -InformationAction Continue -MessageData $Private:Msg
 		}
+		# Session secrets (capability nonce, frame key, command token) and the spawn command line that carries the
+		# serialized session never go to a console or log: show a placeholder for them.
+		if ($Object -is [System.Collections.IDictionary])
+		{
+			$Private:Secret = @('Nonce', 'FrameKey', 'CommandToken', 'Argumentlist')
+			$Private:NeedsMask = $false
+			foreach ($Private:K in @($Object.Keys)) { if ([String]$Private:K -in $Private:Secret) { $Private:NeedsMask = $true } }
+			if ($Private:NeedsMask)
+			{
+				$Private:Masked = if ($Object -is [Hashtable]) { @{} } else { [Ordered]@{} }
+				foreach ($Private:K in @($Object.Keys))
+				{
+					if ([String]$Private:K -eq 'Argumentlist') { $Private:Masked[$Private:K] = ([String]$Object[$Private:K]) -replace '(-SerialData\s+)\S+', '$1<redacted>' }
+					elseif ([String]$Private:K -in $Private:Secret) { $Private:Masked[$Private:K] = '<redacted>' }
+					else { $Private:Masked[$Private:K] = $Object[$Private:K] }
+				}
+				$Object = $Private:Masked
+			}
+		}
 		if ($Object.count -ne [int]0)
 		{
 			Switch -regex ($Object.gettype().name)

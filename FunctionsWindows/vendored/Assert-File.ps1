@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-File.ps1 by Sync-SharedUtilities [SHA256 8F45E1C13A55CB5E5D421B86DFF75846BEC3C021C6E46794680A682491187F55] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-File.ps1 by Sync-SharedUtilities [SHA256 7BCF7FD2134C32D5927B0AE01B8B5800DA7E144B0D0FE5DED07C112827AAFCD6] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Assert-File
 {
 	<#
@@ -47,9 +47,9 @@ Function Assert-File
 	Begin
 	{
 		# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
-	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
-	# $env:MyFunctionTraceEnabled can be '1' there regardless.
-	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+		# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+		# $env:MyFunctionTraceEnabled can be '1' there regardless.
+		If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
 	}
 
 	Process
@@ -62,9 +62,12 @@ Function Assert-File
 
 		try
 		{
-			$Private:AnyExists    = Test-Path -Path $InputObject -PathType Any  -ErrorAction Stop
-			$Private:FileExists   = Test-Path -Path $InputObject -PathType Leaf -ErrorAction Stop
-			$Private:FolderResult = Split-Path -Path $InputObject -Parent | Assert-Folder -Option Test
+			$Private:AnyExists    = Test-Path -LiteralPath $InputObject -PathType Any  -ErrorAction Stop
+			$Private:FileExists   = Test-Path -LiteralPath $InputObject -PathType Leaf -ErrorAction Stop
+			# A bare file name has an empty parent: that means the current directory.
+			$Private:ParentPath   = Split-Path -Path $InputObject -Parent
+			if ([String]::IsNullOrEmpty($Private:ParentPath)) { $Private:ParentPath = '.' }
+			$Private:FolderResult = $Private:ParentPath | Assert-Folder -Option Test
 
 			switch ($Option)
 			{
@@ -101,7 +104,7 @@ Function Assert-File
 					# Ensure the parent folder exists, creating it if necessary
 					if (-not $Private:FolderResult.Success)
 					{
-						$Private:CreateResult = Split-Path -Path $InputObject -Parent | Assert-Folder -Option Create
+						$Private:CreateResult = $Private:ParentPath | Assert-Folder -Option Create
 						if (-not $Private:CreateResult.Success)
 						{
 							'The [{0}] file could not be created: {1}' -f [String]$InputObject, $Private:CreateResult.Message
@@ -115,7 +118,7 @@ Function Assert-File
 				'Remove'
 				{
 					if ($Private:FileExists)
-					{ $null = Remove-Item -Path $InputObject -ErrorAction Stop }
+					{ $null = Remove-Item -LiteralPath $InputObject -ErrorAction Stop }
 				}
 			}
 		}

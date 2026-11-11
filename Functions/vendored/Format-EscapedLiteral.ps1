@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Format-EscapedLiteral.ps1 by Sync-SharedUtilities [SHA256 5D054248C2025FBAECCE8FEC386F01CE76D6E63628F725799C34531F341D2C5A] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Format-EscapedLiteral.ps1 by Sync-SharedUtilities [SHA256 8F397CD93D9A5B8309C45832453534302C100C81C455CB17303D01F2A892E961] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Format-EscapedLiteral
 {
 	<#
@@ -20,7 +20,7 @@ Function Format-EscapedLiteral
 		$null-handling bugs ConvertTo-ParameterSet itself already hit and fixed live, which any of the
 		other three hand-rolled sites could just as easily reproduce independently.
 
-		Only escapes the value (doubles embedded single quotes); does NOT add surrounding quotes
+		Only escapes the value (doubles embedded single quotes, ASCII and typographic); does NOT add surrounding quotes
 		unless -Quote is specified, since callers embed the result into differently-shaped
 		surroundings (some already have the quotes as part of a template, some do not).
 
@@ -64,7 +64,9 @@ Function Format-EscapedLiteral
 		# $env:MyFunctionTraceEnabled can be '1' there regardless.
 		If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
 
-		$Private:Escaped = If ($null -eq $Value) { '' } Else { $Value -replace "'", "''" }
+		# PowerShell treats U+2018/U+2019/U+201A/U+201B as single quotes too, so each one is doubled as well;
+		# doubling only the ASCII quote lets a typographic quote end the literal early.
+		$Private:Escaped = If ($null -eq $Value) { '' } Else { [Regex]::Replace($Value, "['‘’‚‛]", '$0$0') }
 		If ($Quote) { return "'$Private:Escaped'" }
 		return $Private:Escaped
 	}

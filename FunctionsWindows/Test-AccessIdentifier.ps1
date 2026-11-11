@@ -54,20 +54,23 @@
 	}
 	Process
 	{
-		$ID = $IDList -split ':'
+		# One entry per call (each pipeline item arrives alone; an array passed by parameter is handled entry by entry).
+		If (@($IDList).Count -gt 1)
+		{
+			ForEach ($Private:Entry in $IDList) { Test-AccessIdentifier -IDList $Private:Entry }
+			return
+		}
+		$Private:Text = [String]$IDList[0]
+		$ID = $Private:Text -split ':'
 		If ($ID.count -lt 1 -or $ID.count -gt 3)
 		{
 			throw "Invalid access identifier format: must have 1-3 parts separated by colons, got $($ID.count)"
 		}
-		If ($ID.count -ne 3)
-		{
-			If ($ID.count -eq 1)
-			{$IDList += ':Allow:ReadWrite'}
-			If ($ID.count -eq 2)
-			{$IDList += ':ReadWrite'}
-			$ID = $IDList -split ':'
-		}
-		$IDList | Write-Verbose
+		If ($ID.count -eq 1)
+		{$ID = @($ID[0], 'Allow', 'ReadWrite')}
+		ElseIf ($ID.count -eq 2)
+		{$ID = @($ID[0], $ID[1], 'ReadWrite')}
+		$Private:Text | Write-Verbose
 		$ID | Write-Verbose
 		if ($ID[0] -like '*\*')
 		{$IDu = $ID[0] -split '\\' | Select-Object -Last 1}

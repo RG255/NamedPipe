@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Invoke-MyCatchAuditTriage.ps1 by Sync-SharedUtilities [SHA256 6E133FBFAFDA88E22A682A67AA6D79D08078D1A8A7F2BF9E886B0C21BAAC15DC] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Invoke-MyCatchAuditTriage.ps1 by Sync-SharedUtilities [SHA256 E95B2C644DDCAE5AA2FB254D40A07D5003E70B7FB711FA2F5E4F5A5124F93867] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Invoke-MyCatchAuditTriage
 {
 	<#
@@ -22,6 +22,11 @@ Function Invoke-MyCatchAuditTriage
 		both "yes, expected, ignore" and "wait, that's new" entries be triaged down to just the second
 		kind, without losing track of what you have not looked at yet.
 
+		2026-11-08: run from an ELEVATED window, the spill files are imported first (it reads the log through
+		Get-MyCatchAuditLog -Persisted, which calls Import-MyCatchAuditSpill), so entries that non-elevated
+		sessions saved there are triaged like any other; imported ones carry Origin=Spill. Non-elevated, nothing
+		is imported and the spill files are left alone.
+
 		Rewrites the persisted log via a temp-file-then-swap (Move-Item), never a direct in-place edit -
 		a crash mid-rewrite leaves either the untouched original or the fully-written replacement, never
 		a half-written file. Does not touch the in-memory $Global:MyCatchAuditLog (a separate,
@@ -36,6 +41,7 @@ Function Invoke-MyCatchAuditTriage
 	[CmdletBinding(SupportsShouldProcess)]
 	Param ()
 
+	# Get-MyCatchAuditLog -Persisted imports the spill files first when this process is elevated (2026-11-08).
 	$Private:_all = @(Get-MyCatchAuditLog -Persisted)
 	If ($Private:_all.Count -eq 0)
 	{ Write-Output -InputObject 'Invoke-MyCatchAuditTriage: the persisted log is empty - nothing to triage.'; return }
@@ -45,7 +51,7 @@ Function Invoke-MyCatchAuditTriage
 	$Private:_quit = $false
 
 	Write-Output -InputObject ('{0} recurring issue(s) across {1} total entr{2} to triage.' -f `
-		$Private:_groups.Count, $Private:_all.Count, $(If ($Private:_all.Count -eq 1) { 'y' } Else { 'ies' }))
+			$Private:_groups.Count, $Private:_all.Count, $(If ($Private:_all.Count -eq 1) { 'y' } Else { 'ies' }))
 
 	ForEach ($Private:_g in $Private:_groups)
 	{
@@ -81,18 +87,24 @@ Function Invoke-MyCatchAuditTriage
 	{ Write-Output -InputObject ''; Write-Output -InputObject 'Nothing resolved - the persisted log is unchanged.'; return }
 
 	$Private:_path = Get-MyCatchAuditPersistPath
-	$Private:_remaining = @($Private:_all | Where-Object { -not $Private:_resolvedIds.Contains([String]$_.Id) })
 
 	If ($PSCmdlet.ShouldProcess($Private:_path, ('Remove {0} resolved entr{1} from the persisted catch-audit log' -f $Private:_resolvedIds.Count, $(If ($Private:_resolvedIds.Count -eq 1) { 'y' } Else { 'ies' }))))
 	{
 		Try
 		{
 			$Private:_tempPath = $Private:_path + ('.tmp-{0}' -f [Guid]::NewGuid().ToString('N'))
+			# Re-read the file NOW and drop only the resolved Ids, keeping every other line as written: other processes
+			# append while the prompts are open, and rewriting from the snapshot taken at the start would delete those.
+			$Private:_remaining = @(Get-Content -LiteralPath $Private:_path -ErrorAction Stop | Where-Object { $_ -and $_.Trim() } | Where-Object {
+					$Private:_lineId = $null
+					Try { $Private:_lineId = [String](($_ | ConvertFrom-Json -ErrorAction Stop).Id) }
+					# SILENT-OK: a line that does not parse is kept untouched, never dropped.
+					Catch { $Private:_lineId = $null }
+					-not ($Private:_lineId -and $Private:_resolvedIds.Contains($Private:_lineId))
+				})
 			If ($Private:_remaining.Count -gt 0)
 			{
-				$Private:_remaining |
-					ForEach-Object { $_ | ConvertTo-Json -Compress -Depth 3 } |
-					Set-Content -LiteralPath $Private:_tempPath -Encoding utf8 -ErrorAction Stop
+				$Private:_remaining | Set-Content -LiteralPath $Private:_tempPath -Encoding utf8 -ErrorAction Stop
 			}
 			Else
 			{ $null = New-Item -Path $Private:_tempPath -ItemType File -Force -ErrorAction Stop }
@@ -100,7 +112,7 @@ Function Invoke-MyCatchAuditTriage
 
 			Write-Output -InputObject ''
 			Write-Output -InputObject ('Removed {0} resolved entr{1}; {2} still pending.' -f `
-				$Private:_resolvedIds.Count, $(If ($Private:_resolvedIds.Count -eq 1) { 'y' } Else { 'ies' }), $Private:_remaining.Count)
+					$Private:_resolvedIds.Count, $(If ($Private:_resolvedIds.Count -eq 1) { 'y' } Else { 'ies' }), $Private:_remaining.Count)
 		}
 		Catch
 		{ Write-Warning -Message ('Invoke-MyCatchAuditTriage: could not rewrite the persisted log: {0}' -f $_.Exception.Message) }

@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Invoke-FileManagement.ps1 by Sync-SharedUtilities [SHA256 67A43CA49BB95F7FA56DA0B25E29D7C5A606025E1D916F9BD1C44E09D6E3EF59] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Invoke-FileManagement.ps1 by Sync-SharedUtilities [SHA256 0A56B38C32430479218C0CACCAB52FEE4F6D511AAAC050BE3532A3C86E3ACD8C] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Invoke-FileManagement
 {
 	<#
@@ -109,8 +109,8 @@ Function Invoke-FileManagement
 						{ Remove-Item -Path $Private:File.FullName -ErrorAction Stop }
 						catch
 						{ Write-Warning ('Invoke-FileManagement: could not delete [{0}]: {1}' -f $Private:File.FullName, $_.Exception.Message)
-						Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one expired file (DaysOld rule) - best-effort housekeeping, one locked/undeletable file must not stop the rest' -ErrorRecord $_
-					}
+							Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one expired file (DaysOld rule) - best-effort housekeeping, one locked/undeletable file must not stop the rest' -ErrorRecord $_
+						}
 					}
 				}
 			}
@@ -118,20 +118,21 @@ Function Invoke-FileManagement
 
 		'Number'
 		{
-			[Array]$Private:FileNames = (Get-Item -Path $FilePath).FullName | Sort-Object -Descending
+			# Newest first by LastWriteTime; everything from index NumberOfFiles onward is excess.
+			[Array]$Private:FileNames = @(Get-Item -Path $FilePath | Sort-Object -Property LastWriteTime, Name -Descending).FullName
 			$Private:Count = [int]$Private:FileNames.Count - 1
-			while ($Private:Count -gt $NumberOfFiles)
+			while ($Private:Count -ge $NumberOfFiles)
 			{
-				if (Test-Path -Path $Private:FileNames[$Private:Count])
+				if (Test-Path -LiteralPath $Private:FileNames[$Private:Count])
 				{
 					if ($LogLevel -gt [int]0)
 					{ 'Deleting: {0}' -f $Private:FileNames[$Private:Count] | Write-MyLog -PathToLogFile $PathToLogFile }
 					try
-					{ Remove-Item -Path $Private:FileNames[$Private:Count] -ErrorAction Stop }
+					{ Remove-Item -LiteralPath $Private:FileNames[$Private:Count] -ErrorAction Stop }
 					catch
 					{ Write-Warning ('Invoke-FileManagement: could not delete [{0}]: {1}' -f $Private:FileNames[$Private:Count], $_.Exception.Message)
-					Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one excess file (Number rule) - best-effort housekeeping, one locked/undeletable file must not stop the rest' -ErrorRecord $_
-				}
+						Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one excess file (Number rule) - best-effort housekeeping, one locked/undeletable file must not stop the rest' -ErrorRecord $_
+					}
 				}
 				$Private:Count--
 			}
@@ -139,12 +140,13 @@ Function Invoke-FileManagement
 
 		'NumberAndDays'
 		{
-			$Private:FileNames = Get-Item -Path $FilePath | Sort-Object -Descending
+			# Newest first by LastWriteTime; only files beyond the newest NumberOfFiles AND older than DaysOld go.
+			$Private:FileNames = @(Get-Item -Path $FilePath | Sort-Object -Property LastWriteTime, Name -Descending)
 			$Private:Count     = [int]$Private:FileNames.Count
 			while ($Private:Count -gt $NumberOfFiles)
 			{
-				$Private:Date    = $Private:FileNames.LastWriteTime[$Private:Count - 1].ToFileTimeUtc()
-				$Private:DelFile = Join-Path $Private:Dir $Private:FileNames.Name[$Private:Count - 1]
+				$Private:Date    = $Private:FileNames[$Private:Count - 1].LastWriteTime.ToFileTimeUtc()
+				$Private:DelFile = Join-Path $Private:Dir $Private:FileNames[$Private:Count - 1].Name
 				if ($Private:Date -lt (Get-Date).AddDays(-$DaysOld).ToFileTimeUtc())
 				{
 					if (Test-Path -Path $Private:DelFile)
@@ -155,8 +157,8 @@ Function Invoke-FileManagement
 						{ Remove-Item -Path $Private:DelFile -ErrorAction Stop }
 						catch
 						{ Write-Warning ('Invoke-FileManagement: could not delete [{0}]: {1}' -f $Private:DelFile, $_.Exception.Message)
-						Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one expired-and-excess file (NumberAndDays rule) - best-effort housekeeping, one locked/undeletable file must not stop the rest' -ErrorRecord $_
-					}
+							Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one expired-and-excess file (NumberAndDays rule) - best-effort housekeeping, one locked/undeletable file must not stop the rest' -ErrorRecord $_
+						}
 					}
 				}
 				$Private:Count--
@@ -173,23 +175,25 @@ Function Invoke-FileManagement
 				$Private:Ext    = (Split-Path -Leaf -Path $FilePath).Split('.')[1]
 				$Private:Files  = Get-Item -Path ($Private:Parent + '\' + $Private:Name + '*' + $Private:Ext)
 
-				while ($Private:Files.Count -gt $KeepCopies)
+				# Delete the oldest rotated copies (never the current log) until KeepCopies files remain. Each copy is tried
+				# once, so a locked file is skipped instead of retried forever.
+				$Private:Total  = [int]@($Private:Files).Count
+				$Private:Others = @($Private:Files | Where-Object { $_.FullName -ne (Get-Item -Path $FilePath).FullName } | Sort-Object -Property LastWriteTime, Name)
+				foreach ($Private:Old in $Private:Others)
 				{
-					if (Test-Path -Path $Private:Files[1].FullName)
+					if ($Private:Total -le $KeepCopies) { break }
+					try
 					{
-						try
-						{
-							Out-File -Encoding $Encoding -FilePath $FilePath -Append -InputObject (
-								(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' Old Log File deleted: [' + $Private:Files[1].Name + ']')
-							if ([Environment]::UserInteractive)
-							{ $Private:Files[1].FullName | Write-Output }
-							Remove-Item -Path $Private:Files[1].FullName -ErrorAction Stop
-						}
-						catch
-						{ Write-Warning ('Invoke-FileManagement: could not delete [{0}]: {1}' -f $Private:Files[1].FullName, $_.Exception.Message)
-						Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one rotated-out log copy (Size rule) - best-effort housekeeping, one locked/undeletable file must not stop rotation' -ErrorRecord $_
+						Out-File -Encoding $Encoding -FilePath $FilePath -Append -InputObject (
+							(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' Old Log File deleted: [' + $Private:Old.Name + ']')
+						if ([Environment]::UserInteractive)
+						{ $Private:Old.FullName | Write-Output }
+						Remove-Item -LiteralPath $Private:Old.FullName -ErrorAction Stop
+						$Private:Total--
 					}
-						$Private:Files = Get-Item -Path ($Private:Parent + '\' + $Private:Name + '*' + $Private:Ext)
+					catch
+					{ Write-Warning ('Invoke-FileManagement: could not delete [{0}]: {1}' -f $Private:Old.FullName, $_.Exception.Message)
+						Write-MyCatchAudit -Source 'Invoke-FileManagement: delete one rotated-out log copy (Size rule) - best-effort housekeeping, one locked/undeletable file must not stop rotation' -ErrorRecord $_
 					}
 				}
 

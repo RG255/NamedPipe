@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Write-MyCatchAudit.ps1 by Sync-SharedUtilities [SHA256 2139FBAB9818E82F731DF0D0AF9F389FB3CFEC84649613D35FB50B1BE18385CB] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Write-MyCatchAudit.ps1 by Sync-SharedUtilities [SHA256 9A69B1071DEA87A1DC877805A7F03DCD325FEAA650C382AB6A6F58E8930622A4] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Write-MyCatchAudit
 {
 	<#
@@ -27,6 +27,15 @@ Function Write-MyCatchAudit
 		at the time. $Global:, not $Script: - deliberately ONE shared trail across every module in the
 		process, since a single user action often crosses module boundaries (e.g. a VHDTools operation
 		calling into NamedPipe) and a fragmented per-module list would miss that.
+
+		DENIED WRITES SPILL (2026-11-08): the persisted file is created by whichever process writes first, and
+		once an elevated process has created it an ordinary process is denied. Such an entry is written at once
+		to <ProgramData>\CatchAudit\Spill\Spill-<user>-<PID>.jsonl (see Get-MyCatchAuditSpillPath), still queued
+		in $Global:MyCatchAuditUnpersisted (cap 500) for a module that relays through an elevated session, and
+		kept in $Global:MyCatchAuditLog. An elevated Get-MyCatchAuditLog, Show-MyCatchAuditSummary,
+		Invoke-MyCatchAuditTriage or Deploy-Modules imports the spill files into the persisted log, labelled
+		Origin='Spill' (Import-MyCatchAuditSpill); a non-elevated session only counts them as pending. A process
+		with no relay gets ONE warning, on its first spilled entry. This function still NEVER throws.
 
 		LIVE ECHO IS OPT-IN, via $env:MyCatchAuditVerbose = '1' (see Enable-MyCatchAudit/
 		Disable-MyCatchAudit) - when set, ALSO writes a short, friendly report directly to
@@ -112,7 +121,13 @@ Function Write-MyCatchAudit
 
 		$Private:_exceptionTypeFull = $ErrorRecord.Exception.GetType().FullName
 		$Private:_exceptionTypeName = $ErrorRecord.Exception.GetType().Name
-		$Private:_scriptLeaf = Split-Path -Path $ErrorRecord.InvocationInfo.ScriptName -Leaf -ErrorAction SilentlyContinue
+		# InvocationInfo or ScriptName is empty for an error raised in string-compiled code (e.g. a pipe-server scriptblock)
+		# or a synthetic ErrorRecord; Split-Path rejects an empty path with a terminating binding error, which would drop the whole entry.
+		$Private:_inv = $ErrorRecord.InvocationInfo
+		$Private:_scriptLeaf = $null
+		If ($Private:_inv -and -not [String]::IsNullOrEmpty($Private:_inv.ScriptName))
+		{ $Private:_scriptLeaf = Split-Path -Path $Private:_inv.ScriptName -Leaf -ErrorAction SilentlyContinue }
+		$Private:_lineNo = If ($Private:_inv) { $Private:_inv.ScriptLineNumber } Else { 0 }
 		# Short, stable per-entry ID (2026-09-10) - lets Invoke-MyCatchAuditTriage remove SPECIFIC
 		# resolved entries from the persisted log without disturbing ones nobody has looked at yet.
 		# Not used by the in-memory view at all (that is process-scoped and never individually pruned).
@@ -126,7 +141,7 @@ Function Write-MyCatchAudit
 			ExceptionType  = $Private:_exceptionTypeFull
 			Message        = $ErrorRecord.Exception.Message
 			ScriptName     = $Private:_scriptLeaf
-			LineNumber     = $ErrorRecord.InvocationInfo.ScriptLineNumber
+			LineNumber     = $Private:_lineNo
 			IsTeardown     = [Bool]$Teardown
 		}
 		$Global:MyCatchAuditLog.Add($Private:_record)
@@ -156,7 +171,7 @@ Function Write-MyCatchAudit
 				ExceptionType  = $Private:_exceptionTypeFull
 				Message        = $ErrorRecord.Exception.Message
 				ScriptName     = $Private:_scriptLeaf
-				LineNumber     = $ErrorRecord.InvocationInfo.ScriptLineNumber
+				LineNumber     = $Private:_lineNo
 				ProcessId      = $PID
 				UserName       = [System.Environment]::UserName
 				MachineName    = [System.Environment]::MachineName
@@ -170,9 +185,19 @@ Function Write-MyCatchAudit
 			# writes first, and once an ELEVATED process (e.g. the pipe server) has created it, only SYSTEM and
 			# Administrators can append. The entry is not lost: it is queued in $Global:MyCatchAuditUnpersisted,
 			# and a module that owns an elevated session relays the queue through it (VHDTools'
-			# Send-VHDCatchAuditPending, called when its session closes). Only a process with NO relay is warned.
+			# Send-VHDCatchAuditPending, called when its session closes). 2026-11-08: it is ALSO saved at once to the
+			# spill folder (below), so a process that never relays no longer loses it; only a process with NO relay is warned.
 			If ($_.Exception -is [System.UnauthorizedAccessException] -and $Private:_jsonLine)
 			{
+				$Private:_denied = $_.Exception.Message
+				# SPILL (2026-11-08): write the entry IMMEDIATELY to a spill file in a folder anything can add a file
+				# to, so it survives a process that ends without ever relaying (see Get-MyCatchAuditSpillPath). An
+				# elevated Get-MyCatchAuditLog / Show-MyCatchAuditSummary / Invoke-MyCatchAuditTriage / Deploy-Modules
+				# imports it, labelled Origin=Spill. The Get-Command guard keeps an older vendored copy that lacks the
+				# helper working exactly as before (queue + relay + warning below). Write-MyCatchAuditSpill never throws.
+				$Private:_spilled = $false
+				If (Get-Command -Name Write-MyCatchAuditSpill -CommandType Function -ErrorAction SilentlyContinue)
+				{ $Private:_spilled = [Bool](Write-MyCatchAuditSpill -JsonLine ([String]$Private:_jsonLine)) }
 				If (-not $Global:MyCatchAuditUnpersisted)
 				{ $Global:MyCatchAuditUnpersisted = [System.Collections.Generic.List[String]]::new() }
 				# Cap on the relay queue (wanted - keeps a runaway loop from growing it without bound). When it is
@@ -191,8 +216,20 @@ Function Write-MyCatchAudit
 						Write-Warning -Message ('Write-MyCatchAudit: the unpersisted catch-audit queue is full ({0} entries); further entries are kept only in $Global:MyCatchAuditLog (in memory) and counted in $Global:MyCatchAuditUnpersistedDropped.' -f $Private:_queueCap)
 					}
 				}
-				If (-not $Global:MyCatchAuditRelayAvailable -and $Private:_queued)
-				{ Write-Warning -Message ('Write-MyCatchAudit: this session cannot write the persisted catch-audit file (access denied) and has no elevated session to relay it through; the entry is queued in memory only: {0}' -f $_.Exception.Message) }
+				If ($Private:_spilled)
+				{
+					$Global:MyCatchAuditSpilled = 1 + [Int]$Global:MyCatchAuditSpilled
+					# ONE warning per process, on the first spilled entry, and only when no elevated session will relay the
+					# queue (a process that can relay has no need to alarm the user - the spill copy is then a safety net and
+					# the import skips whatever the relay already delivered).
+					If (-not $Global:MyCatchAuditRelayAvailable -and -not $Global:MyCatchAuditSpillWarned)
+					{
+						$Global:MyCatchAuditSpillWarned = $true
+						Write-Warning -Message ('Write-MyCatchAudit: this session cannot write the persisted catch-audit file (access denied); {0} catch-audit entr{1} saved to the spill folder {2} (further entries from this process are saved there without another warning). Run Get-MyCatchAuditLog from an elevated window, or deploy the modules, to import them.' -f [Int]$Global:MyCatchAuditSpilled, $(If ([Int]$Global:MyCatchAuditSpilled -eq 1) { 'y' } Else { 'ies' }), (Get-MyCatchAuditSpillPath -NoCreate))
+					}
+				}
+				ElseIf (-not $Global:MyCatchAuditRelayAvailable -and $Private:_queued)
+				{ Write-Warning -Message ('Write-MyCatchAudit: this session cannot write the persisted catch-audit file (access denied) and has no elevated session to relay it through; the entry is queued in memory only: {0}' -f $Private:_denied) }
 			}
 			Else
 			{

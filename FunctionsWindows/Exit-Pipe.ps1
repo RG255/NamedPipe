@@ -25,7 +25,8 @@
 			process to exit after closing its writer end of the pipe.
 
 			.NOTES
-			Place additional notes here.
+			Exit-Pipe ends the calling PowerShell session or script host (it runs 'Exit'). -DataObject is
+			position 0 and -PipeInfo is position 1.
 
 			.LINK
 			URLs to related sites
@@ -44,7 +45,7 @@
 	(
 		[Parameter(Mandatory, Position = 0, HelpMessage = 'Please supply the $DataObject object!')]
 		[PSObject]$DataObject,
-		[Parameter(Mandatory, Position = 0, HelpMessage = 'Please supply the $PipeInfo object!')]
+		[Parameter(Mandatory, Position = 1, HelpMessage = 'Please supply the $PipeInfo object!')]
 		[PSObject]$PipeInfo
 	)
 	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }

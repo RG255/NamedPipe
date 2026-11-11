@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-Folder.ps1 by Sync-SharedUtilities [SHA256 E5604ADDC3FD30FF4FFAD788BE2883B74530D1C2C9D6BFE2625EC784C0B92C44] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\FunctionsWindows\Assert-Folder.ps1 by Sync-SharedUtilities [SHA256 6469796518639DDAA0F9231F902EE74BBBAD5926CF4669562B6A863DF6DC5C44] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Assert-Folder
 {
 	<#
@@ -46,9 +46,9 @@ Function Assert-Folder
 	Begin
 	{
 		# -and (Get-Command...) guard: see ConvertFrom-Serial.ps1's own comment (2026-09-15) - this file
-	# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
-	# $env:MyFunctionTraceEnabled can be '1' there regardless.
-	If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
+		# is vendored into modules that never vendor Write-MyFunctionTrace itself, and the process-scoped
+		# $env:MyFunctionTraceEnabled can be '1' there regardless.
+		If ((1 -band ($env:MyFunctionTraceEnabled -as [Int])) -and (Get-Command -Name Write-MyFunctionTrace -ErrorAction SilentlyContinue)) { Write-MyFunctionTrace }
 	}
 
 	Process
@@ -65,7 +65,8 @@ Function Assert-Folder
 			}
 		}
 
-		$Private:FolderExists = Test-Path -Path $Private:Path -PathType Container
+		# -LiteralPath throughout: a wildcard in the path must never make Remove delete every folder it matches.
+		$Private:FolderExists = Test-Path -LiteralPath $Private:Path -PathType Container
 
 		try
 		{
@@ -121,7 +122,7 @@ Function Assert-Folder
 							Message   = 'Folder does not exist.'
 						}
 					}
-					Remove-Item -Path $Private:Path -Recurse -Force -ErrorAction Stop
+					Remove-Item -LiteralPath $Private:Path -Recurse -Force -ErrorAction Stop
 					return [pscustomobject]@{
 						Path      = $Private:Path
 						Operation = 'Remove'

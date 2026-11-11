@@ -77,6 +77,8 @@
 		$Private:LogDir = Join-Path -Path $env:APPDATA -ChildPath 'NamedPipe-Logs'
 		if (-not (Test-Path -Path $Private:LogDir))
 		{ $null = New-Item -ItemType Directory -Path $Private:LogDir -Force }
+		# The folder is user-writable: if it has been replaced by a junction/symlink, write nothing through it.
+		if ((Get-Item -LiteralPath $Private:LogDir -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return $null }
 
 		# Pipe Name is already unique per session (Get-NewPipeName = Prefix-<FileTime>). Sanitise for a filename.
 		$Private:Safe = if ($PipeName) { $PipeName -replace '[^A-Za-z0-9._-]', '_' } else { 'unknown' }

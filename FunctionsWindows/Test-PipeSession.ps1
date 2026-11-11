@@ -24,7 +24,7 @@
 		The PipeInfo object from the session's ServerClientParams.
 
 		.PARAMETER TimeoutMs
-		Milliseconds to wait for the health pipe connection and PONG response.
+		Milliseconds to wait for the health pipe connection, and again for the PONG response.
 		Default 2000.
 
 		.EXAMPLE
@@ -78,16 +78,21 @@
 	{
 		$HealthClient = [System.IO.Pipes.NamedPipeClientStream]::new(
 			'.', $HealthPipeName,
-			[System.IO.Pipes.PipeDirection]::InOut
+			[System.IO.Pipes.PipeDirection]::InOut,
+			[System.IO.Pipes.PipeOptions]::Asynchronous
 		)
 		$HealthClient.Connect($TimeoutMs)
 		$HWriter = [System.IO.StreamWriter]::new($HealthClient)
 		$HReader = [System.IO.StreamReader]::new($HealthClient)
 		$HWriter.AutoFlush        = $true
 
-		$HWriter.WriteLine("PING:$Nonce")
-		$Response = $HReader.ReadLine()
-		$Response -eq "PONG:$Nonce"
+		# Both the write and the reply wait are bounded: a peer that never reads (a pipe has no buffer) must not hang the caller.
+		$WriteTask = $HWriter.WriteLineAsync("PING:$Nonce")
+		If (-not $WriteTask.Wait($TimeoutMs)) { return $false }
+		# The reply wait is bounded by TimeoutMs too: a peer that connects and stays silent must not hang the caller.
+		$ReadTask = $HReader.ReadLineAsync()
+		If (-not $ReadTask.Wait($TimeoutMs)) { return $false }
+		$ReadTask.Result -eq "PONG:$Nonce"
 	}
 	catch
 	{$false}

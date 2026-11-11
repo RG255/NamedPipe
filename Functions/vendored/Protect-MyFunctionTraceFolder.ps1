@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\Protect-MyFunctionTraceFolder.ps1 by Sync-SharedUtilities [SHA256 09A887EA35320A2C5C6B7532FEFF0E714C7740D511D5B3D84994B277A659E5E1] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\Protect-MyFunctionTraceFolder.ps1 by Sync-SharedUtilities [SHA256 253D9348427F3F0371A2095016EFEE14FA247FFF02C6B29F9CED4B928723BC29] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function Protect-MyFunctionTraceFolder
 {
 	<#
@@ -24,6 +24,9 @@ Function Protect-MyFunctionTraceFolder
 
 		RX (not just "list") is deliberate: opening a directory also needs SYNCHRONIZE and READ_ATTRIBUTES.
 		Existing files are reset so they inherit the new ACL. Nothing is deleted or moved.
+
+		-Check reports the folder as NOT locked down if inheritance is still on, if Users (or Everyone / Authenticated
+		Users) has an inheritable allow entry or any allow right wider than list + add a file, or if Users cannot add a file.
 
 		Enable-MyFunctionTrace warns once when it sees the folder is not locked down. Set
 		$env:MyFunctionTraceNoAclWarning = '1' to silence that (for example on a single-user machine).
@@ -58,8 +61,10 @@ Function Protect-MyFunctionTraceFolder
 	If (-not $Path) { $Path = Split-Path -Path (Get-MyFunctionTracePath) -Parent }
 
 	# Well-known SIDs, never account names (locale-proof): SYSTEM, Administrators, Users, CREATOR OWNER.
-	$Private:_loose = @('S-1-5-32-545', 'S-1-1-0', 'S-1-5-11')
-	$Private:_hidden = 0
+	# Plain variables, NOT $Private: - a nested function cannot see a $Private: variable of its parent (that bug made
+	# -Check pass a folder with an inheritable Users allow, because the loose-SID list read as empty there).
+	$Loose = @('S-1-5-32-545', 'S-1-1-0', 'S-1-5-11')
+	$State = @{ Hidden = 0 }
 
 	Function Get-TraceFolderProblem
 	{
@@ -72,13 +77,21 @@ Function Protect-MyFunctionTraceFolder
 		}
 		$acl = Get-Acl -LiteralPath $Folder
 		If (-not $acl.AreAccessRulesProtected) { [void]$problems.Add('inheritance from the parent folder is still enabled') }
+		$usersCanAdd = $false
+		# The intended Users right on the folder is exactly list (read+execute) + add a file; anything beyond it is too wide.
+		$allowedBits = [int]([Security.AccessControl.FileSystemRights]::ReadAndExecute -bor [Security.AccessControl.FileSystemRights]::CreateFiles -bor [Security.AccessControl.FileSystemRights]::Synchronize)
 		ForEach ($r in $acl.Access)
 		{
 			$sid = $null
 			Try { $sid = $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } Catch { Continue }
-			If ($Private:_loose -contains $sid -and $r.AccessControlType -eq 'Allow' -and ($r.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ObjectInherit))
+			If ($Loose -notcontains $sid -or $r.AccessControlType -ne 'Allow') { Continue }
+			If ($r.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ObjectInherit)
 			{ [void]$problems.Add(('{0} has an inheritable (file-level) allow entry: {1}' -f $r.IdentityReference.Value, $r.FileSystemRights)) }
+			ElseIf (([int]$r.FileSystemRights -band (-bnot $allowedBits)) -ne 0)
+			{ [void]$problems.Add(('{0} has a wider allow entry than list + add a file: {1}' -f $r.IdentityReference.Value, $r.FileSystemRights)) }
+			If ($r.FileSystemRights -band [Security.AccessControl.FileSystemRights]::CreateFiles) { $usersCanAdd = $true }
 		}
+		If (-not $usersCanAdd) { [void]$problems.Add('Users cannot add a file to the folder (trace writes would fail)') }
 		If (-not $SkipFiles)
 		{
 			$exposed = 0
@@ -90,14 +103,14 @@ Function Protect-MyFunctionTraceFolder
 				{
 					# A file whose ACL this account cannot even read is protected from this account - the
 					# locked-down state, not a problem. Counted and reported; any other failure is real.
-					If ($_.Exception -is [UnauthorizedAccessException]) { $Private:_hidden++; Continue }
+					If ($_.Exception -is [UnauthorizedAccessException]) { $State.Hidden++; Continue }
 					Throw
 				}
 				ForEach ($r in $fa.Access)
 				{
 					$sid = $null
 					Try { $sid = $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } Catch { Continue }
-					If ($Private:_loose -contains $sid -and $r.AccessControlType -eq 'Allow') { $exposed++; Break }
+					If ($Loose -contains $sid -and $r.AccessControlType -eq 'Allow') { $exposed++; Break }
 				}
 			}
 			If ($exposed -gt 0) { [void]$problems.Add(('{0} existing file(s) still readable by Users/Everyone/Authenticated Users' -f $exposed)) }
@@ -110,7 +123,7 @@ Function Protect-MyFunctionTraceFolder
 		If ($Check)
 		{
 			$Private:_p = @(Get-TraceFolderProblem -Folder $Path -SkipFiles ([Bool]$FolderOnly))
-			Return [PSCustomObject]@{ Path = $Path; LockedDown = ($Private:_p.Count -eq 0); Applied = $false; Problems = $Private:_p; HiddenFiles = $Private:_hidden }
+			Return [PSCustomObject]@{ Path = $Path; LockedDown = ($Private:_p.Count -eq 0); Applied = $false; Problems = $Private:_p; HiddenFiles = $State.Hidden }
 		}
 
 		$Private:_isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -128,7 +141,7 @@ Function Protect-MyFunctionTraceFolder
 			If (@(Get-ChildItem -LiteralPath $Path -File -Force).Count -gt 0)
 			{ & icacls.exe (Join-Path -Path $Path -ChildPath '*') /reset /C /Q | Out-Null }
 			$Private:_after = @(Get-TraceFolderProblem -Folder $Path -SkipFiles $false)
-			Return [PSCustomObject]@{ Path = $Path; LockedDown = ($Private:_after.Count -eq 0); Applied = $true; Problems = $Private:_after; HiddenFiles = $Private:_hidden }
+			Return [PSCustomObject]@{ Path = $Path; LockedDown = ($Private:_after.Count -eq 0); Applied = $true; Problems = $Private:_after; HiddenFiles = $State.Hidden }
 		}
 		Return [PSCustomObject]@{ Path = $Path; LockedDown = $false; Applied = $false; Problems = @('-WhatIf: nothing changed'); HiddenFiles = 0 }
 	}

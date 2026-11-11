@@ -307,7 +307,6 @@ try
 			}
 		}
 	}
-	$Global:Error.clear() # Clear existing errors
 	$ModuleScriptRoot = $PSScriptRoot # Save PSScriptRoot
 	$ModuleName = (Split-Path -Path (Split-Path -Path $ModuleScriptRoot -Parent) -Leaf) # Get the Module name
 	$PSD1Path = (Join-Path -Path $ModuleScriptRoot -ChildPath ('{0}.{1}' -f $ModuleName, 'psd1')) # Get modules psd1 file name
@@ -317,13 +316,12 @@ try
 catch
 {
 	# if any error occurs output salient information
-	$NumberOfErrors = [int]$Global:Error.count
-	$ErrorNumber = $NumberOfErrors - 1
+	$ImportError = $_
 	'{1}{1}An error occurred while processing: [{0}]{1}{1}Message      : [{2}]{1}Command Path : [{3}]{1}Line No.     : [{4}]{1}Failing Line :Command Path: [{5}]{1}{1}' -f (Join-Path -Path $ModuleScriptRoot -ChildPath $PSD1Data.RootModule), "`r`n", 
-	($Global:Error[$ErrorNumber].Exception.Message).Replace(('{0}' -f "`r`n"), ''), 
-	$Global:Error[$ErrorNumber].InvocationInfo.PSCommandPath, 
-	$Global:Error[$ErrorNumber].InvocationInfo.ScriptLineNumber, 
-	($Global:Error[$ErrorNumber].InvocationInfo.Line).Trim() | Write-Warning
+	($ImportError.Exception.Message).Replace(('{0}' -f "`r`n"), ''), 
+	$ImportError.InvocationInfo.PSCommandPath, 
+	$ImportError.InvocationInfo.ScriptLineNumber, 
+	($ImportError.InvocationInfo.Line).Trim() | Write-Warning
 	# Module IMPORT time (reading the manifest) - runs before the module has even finished loading, let
 	# alone before any pipe exists. A throw here fails Import-Module itself; there is no pipe to
 	# collapse.
@@ -517,14 +515,13 @@ try
 }
 Catch
 {
-	# if any error occurs output salient information
-	$NumberOfErrors = [int]$Global:Error.count
-	$ErrorNumber = $NumberOfErrors - 1
-	'{1}{1}An error occurred while processing: [{0}]{1}{1}Message      : [{2}]{1}Command Path : [{3}]{1}Line No.     : [{4}]{1}Failing Line :Command Path: [{5}]{1}{1}' -f (Join-Path -Path $ModuleScriptRoot -ChildPath $PSD1Data.RootModule), "`r`n", 
-	($Global:Error[$ErrorNumber].Exception.Message).Replace(('{0}' -f "`r`n"), ''), 
-	$Global:Error[$ErrorNumber].InvocationInfo.PSCommandPath, 
-	$Global:Error[$ErrorNumber].InvocationInfo.ScriptLineNumber, 
-	($Global:Error[$ErrorNumber].InvocationInfo.Line).Trim() | Write-Warning
+	# if any error occurs output salient information (the error that stopped the load, not the oldest record in the caller's $Error)
+	$ImportError = $_
+	'{1}{1}An error occurred while processing: [{0}]{1}{1}Message      : [{2}]{1}Command Path : [{3}]{1}Line No.     : [{4}]{1}Failing Line :Command Path: [{5}]{1}{1}' -f (Join-Path -Path $ModuleScriptRoot -ChildPath $PSD1Data.RootModule), "`r`n",
+	($ImportError.Exception.Message).Replace(('{0}' -f "`r`n"), ''),
+	$ImportError.InvocationInfo.PSCommandPath,
+	$ImportError.InvocationInfo.ScriptLineNumber,
+	($ImportError.InvocationInfo.Line).Trim() | Write-Warning
 	# Module IMPORT time - same reasoning as the earlier throw in this file: runs before the module has
 	# finished loading, let alone before any pipe exists. A throw here fails Import-Module itself;
 	# there is no pipe to collapse.

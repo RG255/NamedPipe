@@ -43,6 +43,9 @@
 	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
 
 	$Private:MyBoundParameters = $PSCmdlet.MyInvocation.BoundParameters
+	# Local on purpose: an unassigned $DataObject would otherwise resolve to the CALLER's variable (the previous request).
+	$DataObject = $null
+	$transferId = $null
 
 	Try
 	{
@@ -256,6 +259,8 @@
 		# never the payload, which may hold sensitive request text. Write-MyCatchAudit handles its own persist failures.
 		if ($_.Exception.Message -match '^(Pipe frame rejected|Receive-Data: (response carries frame id|request frame id|chunk frame id))')
 		{ Write-MyCatchAudit -Source 'Receive-Data: pipe integrity frame rejected' -ErrorRecord $_ }
+		# A chunked transfer that did not complete leaves its partial buffer behind: drop it.
+		if ($transferId) { $null = ConvertFrom-Serial -ClearBuffer -TransferId ([string]$transferId) }
 		# If deserialization failed, $DataObject may not exist
 		# Create a minimal error object to return
 		if (-not $DataObject)

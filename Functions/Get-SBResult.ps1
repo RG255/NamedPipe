@@ -10,8 +10,9 @@
 		scriptblock from it, invokes it, and stores the result back in the DataObject.
 
 		If the DataObject contains a Parameters property, these are appended to the
-		scriptblock as arguments. Parameters can be a string or a hashtable (converted
-		via ConvertTo-ParameterSet with injection-resistant escaping).
+		scriptblock as arguments. Parameters can be a string, a hashtable, an ordered dictionary or a
+		PSCustomObject (the last three are converted via ConvertTo-ParameterSet with injection-resistant
+		escaping). Any other type fails the request with an "Unsupported Parameters type" error.
 
 		Security: Validates scriptblock syntax before execution to detect malformed
 		or suspicious commands. String parameters are escaped by ConvertTo-ParameterSet
@@ -46,7 +47,8 @@
 
 		.EXAMPLE
 		$Result = Get-SBResult -Command 'Get-Process | Select-Object -First 5'
-		Executes the command string directly.
+		Executes the command string directly and returns a DataObject; read the output from its Result
+		property (and any failure from Error).
 
 		.INPUTS
 		DataObject - The pipe communication data structure, or a command string.
@@ -76,6 +78,10 @@
 	# 0.16: set when a CANCEL command stopped this request (see the nested-pipeline block below).
 	$Private:WasCancelled = $false
 
+	# -Command has no DataObject of its own: build an empty one so the result/error assignments below have somewhere to go.
+	If ($PsCmdlet.ParameterSetName -eq 'Command')
+	{ $DataObject = Set-ObjectParameterSet -Dataset $StrDataObject }
+
 	Try
 	{
 		$Private:ErrorActionPreferenceSave = $ErrorActionPreference
@@ -89,14 +95,29 @@
 		if ($DataObject.$StrParameters)
 		{
 			# Create the scriptblock with properly escaped parameters
-			Switch ($DataObject.$StrParameters.gettype().Name)
+			$Private:ParamKind = 'unsupported'
+			If ($DataObject.$StrParameters -is [String]) { $Private:ParamKind = 'string' }
+			ElseIf ($DataObject.$StrParameters -is [System.Collections.IDictionary]) { $Private:ParamKind = 'dictionary' }
+			ElseIf (@($DataObject.$StrParameters.PSObject.TypeNames) -contains 'System.Management.Automation.PSCustomObject' -or
+				@($DataObject.$StrParameters.PSObject.TypeNames) -contains 'Deserialized.System.Management.Automation.PSCustomObject')
+			{ $Private:ParamKind = 'propertybag' }
+			If ($Private:ParamKind -eq 'unsupported')
+			{ throw ('Unsupported Parameters type [{0}]: use a string, a hashtable, an ordered dictionary or a PSCustomObject.' -f $DataObject.$StrParameters.GetType().FullName) }
+			# Dictionaries and property bags both become a plain hashtable for ConvertTo-ParameterSet (which escapes every value).
+			$Private:ParamHash = @{}
+			If ($Private:ParamKind -eq 'dictionary')
+			{ ForEach ($Private:Key in $DataObject.$StrParameters.Keys) { $Private:ParamHash[[String]$Private:Key] = $DataObject.$StrParameters[$Private:Key] } }
+			ElseIf ($Private:ParamKind -eq 'propertybag')
+			{ ForEach ($Private:Prop in $DataObject.$StrParameters.PSObject.Properties) { If ($Private:Prop.MemberType -eq 'NoteProperty') { $Private:ParamHash[$Private:Prop.Name] = $Private:Prop.Value } } }
+			If ($Private:ParamKind -eq 'propertybag') { $Private:ParamKind = 'dictionary' }
+			Switch ($Private:ParamKind)
 			{
 				'string'
 				{$Private:MyArgs = '{0}' -f $DataObject.$StrParameters}
-				'hashtable'
+				'dictionary'
 				{
 					# ConvertTo-ParameterSet sanitizes values with proper quote escaping
-					$Private:MyArgs = ConvertTo-ParameterSet -Hash $DataObject.$StrParameters
+					$Private:MyArgs = ConvertTo-ParameterSet -Hash $Private:ParamHash
 				}
 			}
 			$Private:SBText = '{0} {1}' -f $Private:Request, $Private:MyArgs

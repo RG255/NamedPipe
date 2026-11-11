@@ -411,7 +411,8 @@ Two-phase health check that confirms the pipe is connected and the server proces
 
 **Phase 2 (active):** connects to the dedicated `.Health` pipe started automatically by the server,
 sends `PING:<nonce>`, and verifies `PONG:<nonce>` is echoed back. A per-call GUID nonce prevents
-replay attacks. Default timeout is 2000 ms.
+replay attacks. Default timeout is 2000 ms; it bounds the connect, the write and the wait for the reply
+separately, so a peer that connects and stays silent makes the check return `$false` instead of hanging.
 
 ```powershell
 if (Test-PipeSession -PipeInfo $ServerClientParams.$StrPipeInfo)
@@ -720,7 +721,7 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 | `AdminRequired` | Bool | $False | Run server process with elevated (Administrator) privileges |
 | `Wait` | Bool | $False | Keep server window open after the pipe closes - for `WaitSeconds` (v0.16+), then it closes by itself |
 | `WindowStyle` | String | Minimized | Server window style: Normal, Minimized, Maximized, Hidden |
-| `ChunkSize` | Int | 32768 | Chunk size in characters for large data transfers |
+| `ChunkSize` | Int | 32768 | Chunk size in characters for large data transfers; `0` disables chunking |
 | `Depth` | Int | 2 | Serialization depth for nested objects |
 | `NoExitOnError` | Bool | $False | Also echo a server-side error's text to the console when the response arrives (it never closes the connection either way - see "Error Handling") |
 | `Verbose` | Bool | $False | Enable verbose output |
@@ -863,6 +864,7 @@ $Session = Start-PipeSession -MyParameters $Private:MyBoundParameters -AccessLis
 ```
 
 Access identifiers are validated by `Test-AccessIdentifier` which checks that the user or group exists locally before the pipe is created.
+The short forms work: `'Users'` means `'Users:Allow:ReadWrite'` and `'Users:Deny'` means `'Users:Deny:ReadWrite'`.
 
 ## Data Structures
 
@@ -881,7 +883,8 @@ Created from ServerClientParams. Contains the splatting parameters for `Send-Req
 The communication payload. Contains:
 - `Type` - Request type (ScriptBlock, Security, ExitPipe)
 - `Request` - The command to execute
-- `Parameters` - Optional parameters for the command
+- `Parameters` - Optional parameters for the command: a string, a hashtable, an ordered dictionary or a PSCustomObject
+  (values are escaped for you). Any other type fails the request with "Unsupported Parameters type".
 - `Data` - Optional out-of-band value(s) the request needs but that should never appear as a literal
   in `Request`/`Parameters`' own text - credentials/keys, or simply a large value (a whole config
   file) that would otherwise be dumped verbatim as one unreadable line in a console echo, the trace
@@ -1331,8 +1334,8 @@ These are exported and available to consumers:
 | `Clear-MyFunctionTraceLog` / `Clear-MyFunctionTraceArchive` | Archive the function-trace log and start a fresh one / prune old archives |
 | `Protect-MyFunctionTraceFolder` | Lock down the function-trace log folder; `-Check` reports whether it is locked down |
 | `Enable-MyCatchAudit` / `Disable-MyCatchAudit` | Turn the live console echo of caught errors on / off (capture is always on) |
-| `Get-MyCatchAuditLog` / `Show-MyCatchAuditSummary` | Read / summarise caught errors, for this process or the persisted log |
-| `Invoke-MyCatchAuditTriage` | Interactively review the persisted catch-audit log and remove only the entries you resolve |
+| `Get-MyCatchAuditLog` / `Show-MyCatchAuditSummary` | Read / summarise caught errors, for this process or the persisted log; an elevated run first imports spilled entries (Origin=Spill), and a non-elevated `Show-MyCatchAuditSummary` reports them as 'pending import' |
+| `Invoke-MyCatchAuditTriage` | Interactively review the persisted catch-audit log (elevated, it first imports spilled entries) and remove only the entries you resolve |
 | `Clear-MyCatchAuditLog` / `Clear-MyCatchAuditArchive` | Archive the persisted catch-audit log and start a fresh one / prune old archives |
 
 ### Internal Functions (Not Exported)

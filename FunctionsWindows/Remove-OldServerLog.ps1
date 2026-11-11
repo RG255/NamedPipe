@@ -26,6 +26,8 @@
 	{
 		$Private:LogDir = Join-Path -Path $env:APPDATA -ChildPath 'NamedPipe-Logs'
 		if (-not (Test-Path -Path $Private:LogDir)) { return }
+		# A junction/symlink here would redirect the deletes: leave a redirected folder alone.
+		if ((Get-Item -LiteralPath $Private:LogDir -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
 		$Private:Cutoff = (Get-Date).AddDays(-$RetentionDays)
 		Get-ChildItem -Path $Private:LogDir -Filter 'server-*.log' -File -ErrorAction SilentlyContinue |
 			Where-Object { $_.LastWriteTime -lt $Private:Cutoff } |
