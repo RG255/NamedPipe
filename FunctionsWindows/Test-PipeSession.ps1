@@ -72,16 +72,20 @@
 	# A per-call nonce is generated and echoed back so a squatting process
 	# cannot pass without relaying the exact challenge value.
 	$HealthPipeName = $PipeInfo.$StrName + '.Health'
-	$Nonce          = [guid]::NewGuid().ToString('N')
+	$Nonce          = New-PipeNonce
 	$HealthClient   = $null
 	try
 	{
 		$HealthClient = [System.IO.Pipes.NamedPipeClientStream]::new(
 			'.', $HealthPipeName,
 			[System.IO.Pipes.PipeDirection]::InOut,
-			[System.IO.Pipes.PipeOptions]::Asynchronous
+			[System.IO.Pipes.PipeOptions]::Asynchronous,
+			[System.Security.Principal.TokenImpersonationLevel]::Identification
 		)
 		$HealthClient.Connect($TimeoutMs)
+		# 0.18: the health pipe must be served by the process the data pipe was verified to belong to (when the session recorded it).
+		$WantServerPid = [uint32]$PipeInfo.$StrVerifiedServerPid
+		If ($WantServerPid -ne 0 -and (Get-PipePeerProcessId -Pipe $HealthClient -Peer Server) -ne $WantServerPid) { return $false }
 		$HWriter = [System.IO.StreamWriter]::new($HealthClient)
 		$HReader = [System.IO.StreamReader]::new($HealthClient)
 		$HWriter.AutoFlush        = $true

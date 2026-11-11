@@ -1,4 +1,4 @@
-﻿# NamedPipe Module v0.17 - User Guide
+﻿# NamedPipe Module v0.18 - User Guide
 
 For a short, practical guide to the session patterns and pitfalls when calling NamedPipe from your own scripts, see
 [Docs/UsingFromScripts.md](Docs/UsingFromScripts.md). This guide is the full reference.
@@ -18,6 +18,7 @@ The NamedPipe module provides Inter-Process Communication (IPC) between PowerShe
 - Configurable serialization depth for complex objects
 - SHA-256 checksum verification for chunked data integrity
 - **Authenticated integrity frame on every pipe line (0.17)** - id, length and payload covered by an HMAC keyed from the session nonce, verified at both ends; replays refused
+- **Direction-marked frames, server-process check and nonce handover (0.18)** - a request frame is never accepted as a response; the client confirms the pipe is served by the process it started before sending the nonce; an elevated server takes the nonce over the pipe; a request policy can run in Audit mode first
 - Built-in debug output at multiple verbosity levels
 - **FunctionExportTable** - internal functions are no longer exported by default
 - **Consumer module tracking** - spawned server automatically imports consumer modules
@@ -93,6 +94,29 @@ Notes:
   into a named server function (the dispatch shape, e.g. `Invoke-VHDAction`, which is exactly what passes).
 - Strict by default: computed arguments (`$( )`, `-f`, command substitution, interpolated strings) are
   rejected. Set `AllowComputedArguments = $true` to permit interpolated strings only.
+
+#### Auditing a request policy before enforcing it (v0.18+)
+
+Putting `Mode = 'Audit'` in the policy hashtable evaluates the policy exactly as before but **blocks nothing**: a request the policy
+would have rejected runs normally, and the server writes one Warning entry to the Application event log (source `NamedPipe`, event id
+**4514**) saying that the request was allowed to run only because of Audit mode. The entry names the request id, the first command
+and the reasons (for a command outside the list: `command not allowed: 'Name'`); it never contains the request text or any argument
+value. A request the policy allows writes nothing.
+
+```powershell
+$Session = Start-PipeSession -MyParameters $Private:MyBoundParameters -Options @{
+    $StrAdminRequired = $True
+    RequestPolicy     = @{
+        AllowedCommands = @('Invoke-VHDAction')
+        Mode            = 'Audit'      # log what would be refused, refuse nothing
+    }
+}
+```
+
+Run the real workflows, read the 4514 entries, and use the command names in them to build and test the `AllowedCommands` list; then
+remove `Mode` to enforce. Absent, or any value other than `Audit` (letter case is ignored), enforces as in every earlier version, so
+setting the key can only ever relax a policy that already exists. Audit mode is a measuring tool, not protection: while it is on,
+the elevated server runs whatever the client sends.
 
 ### What's New in v0.11 (transport hardening)
 
@@ -269,7 +293,8 @@ elseif ($r.TimedOut)   { "Abandoned ($($r.TimedOut)); open a new session." }
 
 ### What's New in v0.17 (integrity frame: what you send is what arrives)
 
-Every line written to the data pipe is now wrapped as `NPF2|<id>|<length>|<mac>|<payload>`. This is internal to
+Every line written to the data pipe is now wrapped as `NPF2|<id>|<length>|<mac>|<payload>` (from v0.18: `NPF3`, with a direction
+field - see "What's New in v0.18"). This is internal to
 `Send-Data` and `Receive-Data` (helpers `ConvertTo-PipeFrame` / `ConvertFrom-PipeFrame`, `Get-PipeFrameMac`, `Get-PipeFrameKey`);
 **no call you make changes**. The payload inside is exactly what 0.16 sent, so chunking and serialization are unchanged.
 
@@ -280,7 +305,7 @@ which detects accidental damage but not deliberate tampering.
 
 | Check | What it catches | Error text (in the returned `.Error`) |
 |---|---|---|
-| Marker | a line that is not a frame. Three causes look identical: the other end runs a different build of the module (often a PowerShell window that loaded NamedPipe before it was updated), something other than NamedPipe wrote to the pipe, or the stream is corrupted | `Pipe frame rejected: the line is not an NPF2 frame. Either the other end runs a different build ... or something else wrote to the pipe, or the stream is corrupted ...` |
+| Marker | a line that is not a frame. Three causes look identical: the other end runs a different build of the module (often a PowerShell window that loaded NamedPipe before it was updated), something other than NamedPipe wrote to the pipe, or the stream is corrupted | `Pipe frame rejected: the line is not an NPF3 frame. Either the other end runs a different build ... or something else wrote to the pipe, or the stream is corrupted ...` |
 | Length | truncated or extended payload | `Pipe frame rejected: payload is N characters, the frame declares M ...` |
 | Authentication code | any altered id, length or payload; a frame forged without the session key | `Pipe frame rejected: the authentication code does not match ...` |
 | Response id | a response that belongs to a different request, e.g. the late answer of a request abandoned after a timeout | `Receive-Data: response carries frame id X but the request in flight is Y ...` |
@@ -290,7 +315,7 @@ which detects accidental damage but not deliberate tampering.
   with the id of the request it accepted. A mismatching response is discarded, never returned for the wrong request. A new
   connection (a re-listen, or a hand-off client) starts a new id sequence.
 - **Both ends must be the same module version.** There is no fallback to unframed lines; the whole module is delivered in one
-  piece, so this holds in normal use. A 'not an NPF2 frame' error cannot say which end is older, or whether the cause is a version mismatch at all. After an update the usual cause is a long-open PowerShell window that imported NamedPipe before the module was updated, talking to a freshly started server, so the first step is to close and reopen the client window and any server window it started. If it recurs from fresh sessions it is not a stale window: treat it as an anomaly (it is in the catch audit) and report it.
+  piece, so this holds in normal use. A 'not an NPF3 frame' error (NPF2 in v0.17) cannot say which end is older, or whether the cause is a version mismatch at all. After an update the usual cause is a long-open PowerShell window that imported NamedPipe before the module was updated, talking to a freshly started server, so the first step is to close and reopen the client window and any server window it started. If it recurs from fresh sessions it is not a stale window: treat it as an anomaly (it is in the catch audit) and report it.
 - **Every rejection is audited** (catch-audit, source `Receive-Data: pipe integrity frame rejected`): the message and caller only,
   never the payload. A rejection is an anomaly, not routine; if you see one, keep the audit record and report it.
 - What this does and does not give you: with the key, an attacker who can write to the pipe but does not hold the nonce cannot
@@ -304,6 +329,28 @@ which detects accidental damage but not deliberate tampering.
 - A CANCEL that arrives just after a request has already completed no longer discards its real result.
 - Tracing the framing: `Enable-MyFunctionTrace -Option 1` (or `3`) shows the `ConvertTo-PipeFrame` / `ConvertFrom-PipeFrame` calls;
   `-Option 2` (curated action detail) does not include them.
+
+### What's New in v0.18 (session set-up: who talks to whom, and which way a frame travels)
+
+Nothing you call changes. Three things happen inside a session, and two new options exist for the rare case you need to override them.
+
+| Area | What 0.18 does |
+|---|---|
+| Frame direction | Frames are now `NPF3\|<direction>\|<id>\|<length>\|<mac>\|<payload>`: `C` for a client request, `S` for a server response or progress message. The authentication code covers the direction and the reading end checks it, so a request frame is never accepted as a response, or the reverse. The "not a frame" error therefore now says `NPF3`; a peer still running 0.17 produces exactly that error (see Troubleshooting). |
+| Smaller messages | The serialized text inside every message and in the server start-up data (`-SerialData`) is now UTF-8 before Base64 instead of UTF-16, which makes it about half as long (a typical request: 2,932 to 1,468 characters on PowerShell 7). A receiver still reads the older UTF-16 form. |
+| Server check by the client | Before the client sends its nonce, `Start-PipeSession` confirms that the pipe is served by the very process it started (the process id comes from the operating system, not from the pipe). If it is not, nothing is sent and the call fails with `refusing to use the pipe - it is served by process X, not the server process Y this session started`. The command token for the health pipe is guarded the same way. The client also connects with identification-level impersonation. |
+| Nonce for an elevated server | When the server is started elevated, the nonce is not given to it as part of its start-up command. The server takes the nonce the client sends as its first line, and only from the process that started it; a connection from any other process is turned away and the server keeps waiting for the right one. A server that is not elevated keeps the earlier behaviour. |
+| `RequestPolicy` Audit mode | See "Auditing a request policy before enforcing it" below. |
+
+Options (set through `Start-PipeSession -Options`, like the others in the Configuration Reference):
+
+- `NonceViaPipe` - unset (the default) means automatic: on for an elevated server, off otherwise. `$true` makes every server take the
+  nonce over the pipe; `$false` always puts it on the start-up command.
+- `VerifyServerPid` - default `$true`. Set `$false` only to find out whether a "refusing to use the pipe" report is a real mismatch;
+  leave it on in normal use.
+
+What is not checked automatically: a client that connects to an existing server by name (a hand-off, or a hand-built connection) does
+not know which process to expect and skips the server check.
 
 ## Architecture
 
@@ -729,6 +776,8 @@ These are set via script parameters or the `Options` hashtable in `Start-PipeSes
 | `ClientConnectTimeout` | Int | 10000 | Milliseconds the client waits to connect to the server |
 | `ChunkReadTimeout` (v0.13+) | Int | 30000 | Milliseconds Receive-Data waits for the NEXT chunk of an already-started chunked transfer. Does NOT apply to the first read of a message (waiting for a server-side operation to complete, or for the server's next request, has no timeout - both are normal, not stalls) - only to a gap AFTER a transfer has already begun, which means the sender broke mid-stream. A caller can bound the first read per call with `Send-Request -TimeoutSeconds` / `-MaxRuntimeSeconds` (v0.16+). |
 | `RedactPotentialSecrets` (v0.15+) | Bool | $True | Gates the built-in structural base64 check described below. See that section before changing this. |
+| `NonceViaPipe` (v0.18+) | Bool | unset (automatic) | `$true`: every server takes the session nonce over the pipe instead of from its start-up command; `$false`: always on the start-up command. Unset: over the pipe when the server is started elevated. |
+| `VerifyServerPid` (v0.18+) | Bool | $True | The client refuses to send its nonce to a pipe served by a process other than the server it started. Switch off only to diagnose a "refusing to use the pipe" report. |
 | `WaitSeconds` (v0.16+) | Int | 300 | With `Wait` set: seconds the server window stays open after the pipe exits or the server crashes (1..3600; a keypress ends it early). Replaces the unbounded `Pause`. |
 
 ### RedactPattern (v0.5+)
@@ -1162,7 +1211,7 @@ When your module depends on NamedPipe (via `RequiredModules` in your psd1), the 
 # VHD.psd1
 @{
     RequiredModules = @(
-        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.17' }
+        @{ ModuleName = 'NamedPipe'; RequiredVersion = '0.18' }
     )
 }
 ```
@@ -1360,7 +1409,7 @@ Set `$env:NAMEDPIPE_EXPORT_ALL = '1'` before importing the module to bypass the 
 
 ```powershell
 $env:NAMEDPIPE_EXPORT_ALL = '1'
-Import-Module -Name NamedPipe -Force -RequiredVersion 0.17   # all functions now available
+Import-Module -Name NamedPipe -Force -RequiredVersion 0.18   # all functions now available
 $env:NAMEDPIPE_EXPORT_ALL = $null                           # clear before importing normally
 ```
 
@@ -1455,6 +1504,19 @@ recurs from a fresh session, keep the catch-audit record (`Get-MyCatchAuditLog`)
 **Cause**: An earlier `Send-Request -NoKillOnTimeout` timed out and the server did not honour the cancel, so its answer is
 still pending on the pipe. `Send-Request` refuses to send another request rather than hand you the earlier request's answer.
 **Solution**: `Stop-PipeSession` (add `-Force` if it does not close) and start a new session. The message is returned in `.Error`.
+
+### "Start-PipeServerOrClient: refusing to use the pipe - it is served by process X, not the server process Y this session started" (v0.18+)
+**Cause**: The pipe name was answered by a process other than the server `Start-PipeSession` had just started, so the client sent
+nothing (no nonce, no request). Usual causes are another program using the same pipe name, or a leftover server from an earlier session
+that has not yet exited. The refusal is also recorded in the catch audit.
+**Solution**: Close the leftover window or wait for it to exit and start again. If it recurs with nothing else running and you need to
+see whether the check itself is wrong, start the session once with `VerifyServerPid = $false` and report what you saw; do not leave
+it off.
+
+### "Pipe frame rejected: ... direction ..." (v0.18+)
+**Cause**: A frame arrived marked for the other direction (a request where a response was expected, or the reverse). Both ends of a
+session are the same module version, so this is an anomaly rather than a version mix-up.
+**Solution**: Treat it like the other frame rejections above: keep the catch-audit record, restart the session and report it if it recurs.
 
 ### Migrating from v0.2
 **Problem**: Scripts written for v0.2 call `Start-PipeServerOrClient` directly.

@@ -40,6 +40,8 @@
 		  literals or plain variables. Sub-expressions $(...), arithmetic and format arguments remain
 		  blocked either way; the flag only relaxes variable interpolation inside double-quoted strings.
 
+		A Mode key ('Audit') may also be present; it is read by Get-SBResult, not here, and does not change this function's verdict.
+
 		.OUTPUTS
 		PSCustomObject with:
 		- Allowed [bool]

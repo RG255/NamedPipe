@@ -131,7 +131,10 @@
 		# The MAC covers id, length and payload and, when the session has a nonce, is keyed with PipeInfo.FrameKey, so a frame
 		# that was altered or forged without the key is refused. The server (no ExpectFrameId) additionally requires the request
 		# id to be higher than the last one accepted on this connection, so a replayed or duplicated request is refused.
-		$Private:Frame = ConvertFrom-PipeFrame -Line $line -Key $PipeInfo.$StrFrameKey
+		# A client (it has an id in flight) expects server frames; a server expects client frames.
+		$Private:RecvDir = 'C'
+		if ($null -ne $PipeInfo.$StrExpectFrameId) { $Private:RecvDir = 'S' }
+		$Private:Frame = ConvertFrom-PipeFrame -Line $line -Direction $Private:RecvDir -Key $PipeInfo.$StrFrameKey
 		if ($null -ne $PipeInfo.$StrExpectFrameId)
 		{
 			if ($Private:Frame.Id -ne [int]$PipeInfo.$StrExpectFrameId)
@@ -200,7 +203,7 @@
 				# 0.17: continuation chunks are framed too, with the same id as the first.
 				if ($null -eq $line)
 				{ throw "Receive-Data: the pipe closed in the middle of chunked transfer $transferId." }
-				$Private:ChunkFrame = ConvertFrom-PipeFrame -Line $line -Key $PipeInfo.$StrFrameKey
+				$Private:ChunkFrame = ConvertFrom-PipeFrame -Line $line -Direction $Private:RecvDir -Key $PipeInfo.$StrFrameKey
 				if ($Private:ChunkFrame.Id -ne $Private:Frame.Id)
 				{ throw ('Receive-Data: chunk frame id {0} differs from the transfer''s frame id {1} in transfer {2}.' -f $Private:ChunkFrame.Id, $Private:Frame.Id, $transferId) }
 				$line = $Private:ChunkFrame.Payload

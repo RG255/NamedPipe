@@ -17,8 +17,9 @@ for each operation.
 | `Stop-PipeRequest` | Cancel the running request; the session stays open |
 | `Stop-PipeServer` | Terminate the server process (last resort for a request that cannot be cancelled) |
 
-Every line on the pipe is an authenticated, integrity-checked frame (0.17), and a request that hangs can be cancelled or its
-server killed from a non-elevated caller (0.16). See the user guide's "What's New" sections.
+Every line on the pipe is an authenticated, integrity-checked frame that also carries its direction (0.17, 0.18), the client checks
+which process serves the pipe before it sends the session nonce (0.18), and a request that hangs can be cancelled or its
+server killed from a non-elevated caller (0.16). A request policy can be run in a non-blocking Audit mode first (0.18). See the user guide's "What's New" sections.
 
 ## Requirements
 
@@ -33,21 +34,21 @@ write to, which matters because this module can start elevated processes):
 
 ```powershell
 # PowerShell 7
-git clone https://github.com/RG255/NamedPipe "C:\Program Files\PowerShell\Modules\NamedPipe\0.17"
+git clone https://github.com/RG255/NamedPipe "C:\Program Files\PowerShell\Modules\NamedPipe\0.18"
 # Windows PowerShell 5.1
-git clone https://github.com/RG255/NamedPipe "C:\Program Files\WindowsPowerShell\Modules\NamedPipe\0.17"
+git clone https://github.com/RG255/NamedPipe "C:\Program Files\WindowsPowerShell\Modules\NamedPipe\0.18"
 ```
 
 Then import:
 
 ```powershell
-Import-Module NamedPipe -RequiredVersion 0.17
+Import-Module NamedPipe -RequiredVersion 0.18
 ```
 
 ## Tests
 
 The Pester suite needs Pester 5. Install the module (see Installation) before running it, because tests that start a server
-process load `NamedPipe` 0.17 by name and version from your module path:
+process load `NamedPipe` 0.18 by name and version from your module path:
 
 ```powershell
 Invoke-Pester -Path .\Tests\NamedPipe.Tests.ps1 -Output Detailed

@@ -57,9 +57,9 @@ Describe 'Module Import' {
 		Get-Module -Name NamedPipe | Should -Not -BeNullOrEmpty
 	}
 
-	It 'Should be version 0.17' {
+	It 'Should be version 0.18' {
 		$Module = Get-Module -Name NamedPipe
-		$Module.Version.ToString() | Should -Be '0.17'
+		$Module.Version.ToString() | Should -Be '0.18'
 	}
 
 	It 'Should have a valid module version' {
@@ -856,7 +856,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 		# RUN phase that executes It blocks, so a bare "function" statement at Describe level is
 		# invisible by the time an It block tries to call it (found live: every It below failed
 		# with "term ... is not recognized" until these moved in here).
-		function Script:Send-RDLinesInBackground([String[]]$Lines, [Switch]$Raw, [Switch]$KeepState, [String]$Key)
+		function Script:Send-RDLinesInBackground([String[]]$Lines, [Switch]$Raw, [Switch]$KeepState, [String]$Key, [String]$Direction = 'C')
 		{
 			# 0.17: Receive-Data requires every line to be an integrity frame. Lines are framed here on the main
 			# thread (module calls must not run on the background thread - see the CONCURRENCY NOTE) with frame
@@ -866,7 +866,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 			# reset for the replay test.
 			if (-not $KeepState) { $Script:RDPipeInfo.FrameId = 0 }
 			if (-not $Raw)
-			{ $Lines = @($Lines | ForEach-Object { & $Script:RDFrameCmd -Payload $_ -Id 7 -Key $Key }) }
+			{ $Lines = @($Lines | ForEach-Object { & $Script:RDFrameCmd -Payload $_ -Direction $Direction -Id 7 -Key $Key }) }
 			# Raw .NET only, deliberately - see the CONCURRENCY NOTE above. Uses a separate
 			# Runspace + PowerShell instance (same technique the Health Pipe Protocol tests above
 			# already use for their background server), NOT Start-ThreadJob - ThreadJob is not
@@ -991,7 +991,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 
 		It 'Audits a rejected frame: the message only, never the payload, and only in the redirected log' {
 			$Payload = ConvertTo-Serial -Object ([PSCustomObject]@{ Secret = 'CANARY-PAYLOAD-0451' }) -ChunkSize 0
-			$Good = & $Script:RDFrameCmd -Payload $Payload -Id 7
+			$Good = & $Script:RDFrameCmd -Payload $Payload -Direction C -Id 7
 			$Bad = $Good.Substring(0, $Good.Length - 1) + $(if ($Good[-1] -eq 'A') { 'B' } else { 'A' })
 			$Job = Send-RDLinesInBackground -Raw -Lines @($Bad)
 			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
@@ -1018,7 +1018,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 			$Job = Send-RDLinesInBackground -Raw -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
 			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
 			Wait-RDJob $Job
-			$Result.Error | Should -Match 'not an NPF2 frame'
+			$Result.Error | Should -Match 'not an NPF3 frame'
 			# The wording must not claim a single cause: a stale peer, a foreign writer and a corrupted stream look identical here.
 			$Result.Error | Should -Match 'different build'
 			$Result.Error | Should -Match 'something else wrote to the pipe'
@@ -1030,7 +1030,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 		}
 
 		It 'Refuses a payload whose bytes were altered (authentication code mismatch)' {
-			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Id 7
+			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Direction C -Id 7
 			# flip one payload character, keeping the length: only the hash can catch it
 			$Bad = $Good.Substring(0, $Good.Length - 1) + $(if ($Good[-1] -eq 'A') { 'B' } else { 'A' })
 			$Job = Send-RDLinesInBackground -Raw -Lines @($Bad)
@@ -1040,8 +1040,8 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 		}
 
 		It 'Refuses a frame whose id was altered even though length and payload are intact (id is covered)' {
-			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Id 7
-			$Bad = $Good -replace '^NPF2\|7\|', 'NPF2|8|'
+			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Direction C -Id 7
+			$Bad = $Good -replace '^NPF3\|C\|7\|', 'NPF3|C|8|'
 			$Bad | Should -Not -Be $Good
 			$Job = Send-RDLinesInBackground -Raw -Lines @($Bad)
 			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
@@ -1095,7 +1095,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 		}
 
 		It 'Refuses a truncated payload (length mismatch)' {
-			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Id 7
+			$Good = & $Script:RDFrameCmd -Payload (ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0) -Direction C -Id 7
 			$Job = Send-RDLinesInBackground -Raw -Lines @($Good.Substring(0, $Good.Length - 5))
 			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Script:RDPipeInfo
 			Wait-RDJob $Job
@@ -1104,7 +1104,7 @@ Describe 'Receive-Data over a real pipe' -Tag 'Integration' {
 
 		It 'Rejects a response whose frame id is not the request in flight' {
 			$Private:PI = [PSCustomObject]@{ Reader = $Script:RDPipeInfo.Reader; Writer = $Script:RDPipeInfo.Writer; InfoDisplay = 0; FrameId = 0; ExpectFrameId = 99 }
-			$Job = Send-RDLinesInBackground -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
+			$Job = Send-RDLinesInBackground -Direction S -Lines @((ConvertTo-Serial -Object ([PSCustomObject]@{ A = 1 }) -ChunkSize 0))
 			$Result = & $Script:RDReceiveDataCmd -PipeInfo $Private:PI
 			Wait-RDJob $Job
 			$Result.Error | Should -Match 'frame id 7 but the request in flight is 99'
@@ -2278,9 +2278,9 @@ Describe 'Module Variable - DefaultModuleToLoad' -Tag 'Variables' {
 		$Default.Name | Should -Be 'NamedPipe'
 	}
 
-	It 'Should have Version set to 0.17' {
+	It 'Should have Version set to 0.18' {
 		$Default = & (Get-Module NamedPipe) { $script:DefaultModuleToLoad }
-		$Default.Version | Should -Be '0.17'
+		$Default.Version | Should -Be '0.18'
 	}
 }
 

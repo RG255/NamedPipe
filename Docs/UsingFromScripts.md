@@ -142,6 +142,14 @@ elseif ($r.$StrTimedOut)   { <# server was terminated; open a new session #> }
   frame id` or `Receive-Data: request frame id` means a line was altered, truncated, forged, replayed, from a different module version, or a stale response. It is also written to the
   catch-audit log. It should never happen in normal use: keep the audit record and report it rather than retrying blindly.
 
+- **0.18: the client checks which process serves the pipe, and an elevated server takes the nonce over the pipe.** `Start-PipeSession`
+  fails with `refusing to use the pipe - it is served by process X, not the server process Y this session started` if another process
+  answers the pipe name (nothing is sent). Nothing in your script changes; do not turn `VerifyServerPid` off except to diagnose that
+  message. Frames now carry a direction (`NPF3`); a "not an NPF3 frame" error from a peer on 0.17 is the usual version-mix symptom.
+- **0.18: to learn what a `RequestPolicy` would refuse before enforcing it, add `Mode = 'Audit'` to the policy.** Nothing is blocked;
+  each request the policy would have refused writes one Warning to the Application log (source `NamedPipe`, event id 4514) with the
+  request id, the first command and the reasons - never the request text or values. Remove `Mode` to enforce.
+
 ## Common pitfalls
 
 - **`$PipeOptions[$StrModuleToLoad]` from a consumer module's scope.** The exported `$Str*` variables are `$null` in PS7

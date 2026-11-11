@@ -392,6 +392,36 @@ $MyVars = [Ordered]@{
 			Option = $VONone
 			Use    = 'Capability nonce (0.11 hardening 4.2): client presents it as the first line; server admits only a matching connection. Survives the different-PID hand-off (PID is NOT used to gate).'
 		}
+		StrNonceViaPipe                      = @{
+			Value  = 'NonceViaPipe'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.18: option. Unset = automatic: when the server is started ELEVATED the nonce is not placed on its command line; the server adopts it from the first connection whose kernel-reported PID is the PID of the process that started it. $true forces that for every server; $false keeps the nonce on the command line.'
+		}
+		StrVerifyServerPid                   = @{
+			Value  = 'VerifyServerPid'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.18: option, default $true. The client checks, before sending the nonce or a command token, that the pipe is served by the process Start-PipeSession started, and refuses otherwise. $false only to diagnose a reported mismatch.'
+		}
+		StrExpectedServerPid                 = @{
+			Value  = 'ExpectedServerPid'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.18: ServerClientParams key (client side): PID of the server process this session started; the client refuses to talk to a pipe served by another process.'
+		}
+		StrExpectedClientPid                 = @{
+			Value  = 'ExpectedClientPid'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.18: spawn-time ServerClientParams key (server side): PID of the process that started the server; with NonceViaPipe the first connection is admitted only from this PID.'
+		}
+		StrVerifiedServerPid                 = @{
+			Value  = 'VerifiedServerPid'
+			Scope  = $VSScript
+			Option = $VONone
+			Use    = '0.18: PipeInfo key (client side): kernel-reported PID of the verified pipe server; the health-pipe command helper checks that the health pipe is served by the same process before sending a command token.'
+		}
 		StrReadTimeoutMs                     = @{
 			Value  = 'ReadTimeoutMs'
 			Scope  = $VSScript

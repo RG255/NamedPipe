@@ -19,7 +19,7 @@
 		File or folder to check.
 
 		.EXAMPLE
-		Test-ServerCodePathTrusted -Path 'C:\Program Files\PowerShell\Modules\NamedPipe\0.17'
+		Test-ServerCodePathTrusted -Path 'C:\Program Files\PowerShell\Modules\NamedPipe\0.18'
 
 		.OUTPUTS
 		System.String[] - one line per problem; empty when the path is admin-only.

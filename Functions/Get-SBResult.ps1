@@ -14,6 +14,11 @@
 		PSCustomObject (the last three are converted via ConvertTo-ParameterSet with injection-resistant
 		escaping). Any other type fails the request with an "Unsupported Parameters type" error.
 
+		Request policy: when the session has a RequestPolicy, each request is checked against it before it runs and a request the
+		policy rejects is not executed. With the optional key Mode = 'Audit' in the policy hashtable the check still runs but nothing is
+		blocked: a rejected request runs unchanged and one Warning entry (Application log, source NamedPipe, event id 4514) records the
+		request id, the first command name and the reasons, without the request text or argument values. Any other Mode, or none, enforces.
+
 		Security: Validates scriptblock syntax before execution to detect malformed
 		or suspicious commands. String parameters are escaped by ConvertTo-ParameterSet
 		to prevent code injection.
@@ -197,7 +202,12 @@
 		If ($Private:ReqPolicy)
 		{
 			$Private:PolicyResult = Test-RequestPolicy -Request ($Private:SB.ToString()) -Policy $Private:ReqPolicy
-			If (-not $Private:PolicyResult.Allowed)
+			If (-not $Private:PolicyResult.Allowed -and [string]$Private:ReqPolicy['Mode'] -eq 'Audit')
+			{
+				# Audit mode (0.18): record what the policy would have blocked and run the request unchanged.
+				$null = Write-PipePolicyAuditEvent -Reason $Private:PolicyResult.Reason -Request $Private:SB.ToString() -RequestId ([int]$ServerClientParams.$StrPipeInfo.$StrFrameId)
+			}
+			ElseIf (-not $Private:PolicyResult.Allowed)
 			{
 				$DataObject.$StrError = ('Request blocked by pipe request policy: {0}' -f $Private:PolicyResult.Reason)
 				$ErrorActionPreference = $Private:ErrorActionPreferenceSave

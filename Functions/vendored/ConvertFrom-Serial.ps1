@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\ConvertFrom-Serial.ps1 by Sync-SharedUtilities [SHA256 26B77A24DFD3D1353A0A21556CE3C08263559A4299483ACEB4863787816C7640] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\ConvertFrom-Serial.ps1 by Sync-SharedUtilities [SHA256 00376F929443E76C89999C034E9D443F7687C5D6A1180D4F411D333BDEF8A96F] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 # Script-level chunk buffer for accumulating chunks across calls
 if (-not $Script:ChunkBuffer)
 {$Script:ChunkBuffer = @{}}
@@ -111,7 +111,12 @@ Function ConvertFrom-Serial
 			{
 				# Original simple path - single Base64 string
 				[Management.Automation.PSSerializer]::Deserialize(
-					([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Text)) | ConvertFrom-Json)
+					($(
+						# UTF-16 payloads (the original format) have a NUL second byte - the JSON always starts with a
+						# quote, so a UTF-8 payload never does; that is how both encodings are told apart.
+						$Private:Bytes = [Convert]::FromBase64String($Text)
+						If ($Private:Bytes.Length -ge 2 -and $Private:Bytes[1] -eq 0) { [Text.Encoding]::Unicode.GetString($Private:Bytes) } Else { [Text.Encoding]::UTF8.GetString($Private:Bytes) }
+					) | ConvertFrom-Json)
 				)
 			}
 
@@ -194,7 +199,10 @@ Function ConvertFrom-Serial
 
 					# Deserialize and return
 					[Management.Automation.PSSerializer]::Deserialize(
-						([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($base64)) | ConvertFrom-Json)
+						($(
+							$Private:Bytes = [Convert]::FromBase64String($base64)
+							If ($Private:Bytes.Length -ge 2 -and $Private:Bytes[1] -eq 0) { [Text.Encoding]::Unicode.GetString($Private:Bytes) } Else { [Text.Encoding]::UTF8.GetString($Private:Bytes) }
+						) | ConvertFrom-Json)
 					)
 				}
 				else

@@ -38,12 +38,12 @@ $ServerPid = 0
 try
 {
 	$opts = Set-ObjectParameterSet -Dataset $StrMyOptions -MyParameters @{}
-	$opts.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.17'; Path = $Script:ModuleManifest }
+	$opts.$StrModuleToLoad = @{ Name = 'NamedPipe'; Version = '0.18'; Path = $Script:ModuleManifest }
 	$Session = Start-PipeSession -MyParameters $opts -Options @{ $StrAdminRequired = $true; $StrWindowStyle = $StrMinimized }
 	$Params   = $Session.$StrSendRequestParams
 	$PipeInfo = $Session.$StrServerClientParams.$StrPipeInfo
 	$ServerPid = [int]$Params.$StrDataObject.$StrServerPID
-	Write-Host ("`n=== NamedPipe 0.17 elevated server, non-elevated client ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
+	Write-Host ("`n=== NamedPipe 0.18 elevated server, non-elevated client ({0} {1}) ===" -f $PSVersionTable.PSEdition, $PSVersionTable.PSVersion) -ForegroundColor Magenta
 	Write-Host ('  server PID: {0}' -f $ServerPid) -ForegroundColor DarkGray
 
 	function Send-Test

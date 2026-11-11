@@ -70,7 +70,7 @@ If ($Spawned)
 		$Private:module.Invoke({
 				param($data)
 				Start-PipeServerOrClient -SerialData $data
-			}, (ConvertTo-Serial -Object $ServerClientParams))
+			}, (ConvertTo-Serial -Object $ServerClientParams -Encoding Utf8))
 	}
 	Catch
 	{
@@ -192,7 +192,20 @@ Function Start-PipeServerOrClient
 			#   * an ARRAY -ArgumentList : Windows PowerShell 5.1 Start-Process -Verb (ShellExecute) does
 			#     not quote array elements, it just space-joins them, so the path splits again.
 			# With -File the path is a discrete parameter value, so the double quotes survive.
-			$Private:ServerArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Spawned -SerialData {1}' -f $Private:ServerScript, (ConvertTo-Serial -Object $ServerClientParams)
+			# The spawn command line of a process is readable by other processes of the same user, so for an elevated server the
+			# nonce is left off it: the server adopts the one the client presents over the pipe (see the handshake in the server loop).
+			$Private:NonceViaPipe = $ProcessVerb -eq 'RunAs'
+			If ($null -ne $ServerClientParams.$StrNonceViaPipe) { $Private:NonceViaPipe = [bool]$ServerClientParams.$StrNonceViaPipe }
+			$Private:SpawnParams = $ServerClientParams
+			If ($Private:NonceViaPipe -and $ServerClientParams.$StrNonce)
+			{
+				$Private:SpawnParams = [Ordered]@{}
+				ForEach ($Private:Key in $ServerClientParams.Keys)
+				{ If ([string]$Private:Key -cne $StrNonce) { $Private:SpawnParams[$Private:Key] = $ServerClientParams[$Private:Key] } }
+				$Private:SpawnParams[$StrNonceViaPipe] = $true
+				$Private:SpawnParams[$StrExpectedClientPid] = [uint32]$PID
+			}
+			$Private:ServerArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Spawned -SerialData {1}' -f $Private:ServerScript, (ConvertTo-Serial -Object $Private:SpawnParams -Encoding Utf8)
 			If ($ProcessVerb -eq 'RunAs' -and -not $Script:ServerCodePathWarned)
 			{
 				# The elevated server loads NamedPipe and the consumer module from these folders; warn once per process
@@ -314,12 +327,14 @@ Function Start-PipeServerOrClient
 				$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action ({
 						try { if ($PipeForExit) { $PipeForExit.Dispose() } } catch { Write-MyCatchAudit -Source 'Start-PipeServerOrClient: dispose the pipe on an abnormal engine exit (PowerShell.Exiting handler) - defence in depth, the pipe/handle may already be gone' -ErrorRecord $_ -Teardown }
 					}.GetNewClosure())
-				# 0.13 PID hand-off: state + P/Invoke to read a connecting client's real (kernel-set) PID.
+				# 0.13 PID hand-off: the PID a Handoff request armed (a connecting client's real PID comes from Get-PipePeerProcessId).
 				$Private:ExpectedHandinPid = [uint32]0
-				if (-not ('NamedPipe.PidQuery' -as [type]))
-				{
-					Add-Type -Namespace 'NamedPipe' -Name 'PidQuery' -MemberDefinition '[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)] public static extern bool GetNamedPipeClientProcessId(System.IntPtr Pipe, out uint ClientProcessId);' -ErrorAction SilentlyContinue
-				}
+				# 0.18: no nonce on the spawn command line (NonceViaPipe): adopt the first one a client presents, but only from the
+				# process that started this server (kernel-reported PID). No expected PID = nobody is admitted (fail closed).
+				$Private:AwaitNonce = [bool]($ServerClientParams.$StrNonceViaPipe -and -not $ServerClientParams.$StrNonce)
+				$Private:ExpectedClientPid = [uint32]0
+				If ($Private:AwaitNonce -and $ServerClientParams.$StrExpectedClientPid)
+				{ $Private:ExpectedClientPid = [uint32]$ServerClientParams.$StrExpectedClientPid }
 				$Private:ExitRequested = $false
 				While (-not $Private:ExitRequested)
 				{
@@ -386,7 +401,7 @@ Function Start-PipeServerOrClient
 					# GUI->terminal hand-off (a DIFFERENT process presenting the same nonce) still works.
 					# Wrong or absent first line -> reject and re-listen (same teardown as a Disconnect).
 					# No nonce configured (older caller) -> skip the check for backward compatibility.
-					If ($ServerClientParams.$StrNonce)
+					If ($ServerClientParams.$StrNonce -or $Private:AwaitNonce)
 					{
 						$Private:PresentedNonce = $null
 						Try
@@ -405,8 +420,7 @@ Function Start-PipeServerOrClient
 							# it the nonce over this PID-verified channel so it becomes a normal client.
 							If ($Private:ExpectedHandinPid -ne 0)
 							{
-								$Private:_connPid = [uint32]0
-								Try { [void][NamedPipe.PidQuery]::GetNamedPipeClientProcessId($ServerClientParams.$StrPipeInfo.$StrPipe.SafePipeHandle.DangerousGetHandle(), [ref]$Private:_connPid) } Catch { $Private:_connPid = [uint32]0 }
+								$Private:_connPid = Get-PipePeerProcessId -Pipe $ServerClientParams.$StrPipeInfo.$StrPipe -Peer Client
 								If ($Private:_connPid -ne 0 -and $Private:_connPid -eq $Private:ExpectedHandinPid)
 								{
 									$ServerClientParams.$StrPipeInfo.$StrWriter.WriteLine($ServerClientParams.$StrNonce)
@@ -416,6 +430,21 @@ Function Start-PipeServerOrClient
 									If ($ServerClientParams.$StrInfoDisplay -band 4)
 									{Write-Host ('DEBUG SERVER: hand-in accepted from PID {0}' -f $Private:_connPid) -ForegroundColor Green}
 								}
+							}
+						}
+						ElseIf ($Private:AwaitNonce)
+						{
+							# 0.18: the first nonce is accepted only from the process that started this server, as reported by the kernel.
+							# Anything else (a squatter, a wrong process, a malformed value) is rejected and the server keeps listening.
+							$Private:_connPid = Get-PipePeerProcessId -Pipe $ServerClientParams.$StrPipeInfo.$StrPipe -Peer Client
+							If ($Private:_connPid -ne 0 -and $Private:_connPid -eq $Private:ExpectedClientPid -and [string]$Private:PresentedNonce -cmatch '^[0-9A-Za-z\-]{16,128}$')
+							{
+								$ServerClientParams.$StrNonce = [string]$Private:PresentedNonce
+								$Private:AwaitNonce = $false
+								$Private:_admit = $true
+								Add-ServerLogEntry -Message ('nonce adopted over the pipe from PID {0}' -f $Private:_connPid)
+								If ($ServerClientParams.$StrInfoDisplay -band 4)
+								{Write-Host ('DEBUG SERVER: nonce adopted over the pipe from PID {0}' -f $Private:_connPid) -ForegroundColor Green}
 							}
 						}
 						ElseIf (Test-ConstantTimeEqual -Left ([string]$Private:PresentedNonce) -Right ([string]$ServerClientParams.$StrNonce))
@@ -1010,7 +1039,9 @@ Function Start-PipeServerOrClient
 		{
 			$ServerClientParams.$StrPipeInfo.$StrPipe = [IO.Pipes.NamedPipeClientStream]::new(
 				$ServerClientParams.$StrPipeParams.PipeServer,
-				$ServerClientParams.$StrPipeName,$ServerClientParams.$StrPipeParams.Direction
+				$ServerClientParams.$StrPipeName,$ServerClientParams.$StrPipeParams.Direction,
+				[IO.Pipes.PipeOptions]::None,
+				[Security.Principal.TokenImpersonationLevel]::Identification
 			)
 			$DataObject.$StrClientPID = $Pid
 			$DataObject.$StrClientUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -1022,6 +1053,19 @@ Function Start-PipeServerOrClient
 			{
 				If ($ServerClientParams.$StrInfoDisplay -band 4)
 				{Write-Host 'DEBUG CLIENT: Connected, creating StreamReader/Writer' -ForegroundColor Cyan}
+				# 0.18: before anything secret is sent, check that the process serving this pipe is the one this session started.
+				# The PID is reported by the kernel, so another process that created the pipe name first cannot pass for it.
+				$Private:WantServerPid = [uint32]$ServerClientParams.$StrExpectedServerPid
+				If ($ServerClientParams.$StrVerifyServerPid -ne $false -and $Private:WantServerPid -ne 0)
+				{
+					$Private:GotServerPid = Get-PipePeerProcessId -Pipe $ServerClientParams.$StrPipeInfo.$StrPipe -Peer Server
+					If ($Private:GotServerPid -ne $Private:WantServerPid)
+					{
+						$ServerClientParams.$StrPipeInfo.$StrPipe.Dispose()
+						throw ('Start-PipeServerOrClient: refusing to use the pipe - it is served by process {0}, not the server process {1} this session started. Nothing was sent.' -f $Private:GotServerPid, $Private:WantServerPid)
+					}
+					$ServerClientParams.$StrPipeInfo.$StrVerifiedServerPid = $Private:GotServerPid
+				}
 				$ServerClientParams.$StrPipeInfo.$StrReader = [IO.StreamReader]::new($ServerClientParams.$StrPipeInfo.$StrPipe)
 				$ServerClientParams.$StrPipeInfo.$StrWriter = [IO.StreamWriter]::new($ServerClientParams.$StrPipeInfo.$StrPipe)
 				$ServerClientParams.$StrPipeInfo.$StrWriter.AutoFlush = $True
@@ -1062,6 +1106,8 @@ Function Start-PipeServerOrClient
 		catch
 		{
 			Write-Host "DEBUG CLIENT: Exception during connection: $_" -ForegroundColor Red
+			If ($_.Exception.Message -like 'Start-PipeServerOrClient: refusing to use the pipe*')
+			{ Write-MyCatchAudit -Source 'Start-PipeServerOrClient: the pipe is served by a process other than the one this session started - connection refused before any secret was sent' -ErrorRecord $_ }
 			$ServerClientParams.$StrPipeInfo.$StrError = $True
 			NamedPipe\Get-MyError -Return
 		}

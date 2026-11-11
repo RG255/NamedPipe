@@ -148,7 +148,7 @@ Describe 'Receive-Data failure handling' {
 		$Left = InModuleScope NamedPipe {
 			$null = ConvertFrom-Serial -ClearBuffer
 			$Chunks = ConvertTo-Serial -Object ('Z' * 20000) -ChunkSize 1000
-			$First = ConvertTo-PipeFrame -Payload ('JCHUNK:' + ($Chunks[0] | ConvertTo-Json -Compress)) -Id 1 -Key $null
+			$First = ConvertTo-PipeFrame -Payload ('JCHUNK:' + ($Chunks[0] | ConvertTo-Json -Compress)) -Direction C -Id 1 -Key $null
 			$Lines = $First + [Environment]::NewLine + 'garbage-not-a-frame' + [Environment]::NewLine
 			$Pi = [ordered]@{ Reader = [System.IO.StringReader]::new($Lines); InfoDisplay = 0; FrameId = 0; ChunkReadTimeout = 5000 }
 			$null = Receive-Data -PipeInfo $Pi
@@ -299,7 +299,7 @@ Describe 'Health pipe on a live server' -Tag 'Integration' {
 		$Script:Live = $false
 		try
 		{
-			$Mtl = @{ Name = 'NamedPipe'; Version = '0.17'; Path = $Script:Manifest }
+			$Mtl = @{ Name = 'NamedPipe'; Version = '0.18'; Path = $Script:Manifest }
 			$Session = Start-PipeSession -MyParameters ([ordered]@{}) -Options @{ WindowStyle = 'Minimized'; ModuleToLoad = $Mtl }
 			$Script:Srp = $Session.SendRequestParams
 			$Script:Pi = $Session.ServerClientParams.PipeInfo

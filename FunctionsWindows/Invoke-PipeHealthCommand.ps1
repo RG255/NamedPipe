@@ -60,8 +60,12 @@
 	$Private:Client = $null
 	Try
 	{
-		$Private:Client = [System.IO.Pipes.NamedPipeClientStream]::new('.', ($PipeInfo.$StrName + '.Health'), [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::Asynchronous)
+		$Private:Client = [System.IO.Pipes.NamedPipeClientStream]::new('.', ($PipeInfo.$StrName + '.Health'), [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::Asynchronous, [System.Security.Principal.TokenImpersonationLevel]::Identification)
 		$Private:Client.Connect($TimeoutMs)
+		# 0.18: the command token goes only to the process the data pipe was verified to belong to (when the session recorded it).
+		$Private:WantServerPid = [uint32]$PipeInfo.$StrVerifiedServerPid
+		If ($Private:WantServerPid -ne 0 -and (Get-PipePeerProcessId -Pipe $Private:Client -Peer Server) -ne $Private:WantServerPid)
+		{ return '<refused: the health pipe is not served by the session''s server process>' }
 		$Private:Writer = [System.IO.StreamWriter]::new($Private:Client)
 		$Private:Writer.AutoFlush = $true
 		$Private:Reader = [System.IO.StreamReader]::new($Private:Client)

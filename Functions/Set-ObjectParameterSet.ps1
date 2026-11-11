@@ -268,7 +268,23 @@
 						Elseif ($MyOptions.$StrNonce)
 						{ $MyOptions.$StrNonce }
 						Else
-						{ [Guid]::NewGuid().ToString('N') }
+						{ New-PipeNonce }
+						# 0.18: how the nonce reaches an ELEVATED server. $null = automatic (over the pipe, never on the spawn command line,
+						# whenever the server is started elevated); $true / $false force it for every server / switch it off.
+						$StrNonceViaPipe = if ($null -ne $MyParameters.$StrNonceViaPipe)
+						{ [bool]$MyParameters.$StrNonceViaPipe }
+						Elseif ($null -ne $MyOptions.$StrNonceViaPipe)
+						{ [bool]$MyOptions.$StrNonceViaPipe }
+						Else
+						{ $null }
+						# 0.18: refuse to send the nonce / command token to a pipe server other than the process this session started.
+						# Default $true; $false only to diagnose a mismatch report.
+						$StrVerifyServerPid = if ($null -ne $MyParameters.$StrVerifyServerPid)
+						{ [bool]$MyParameters.$StrVerifyServerPid }
+						Elseif ($null -ne $MyOptions.$StrVerifyServerPid)
+						{ [bool]$MyOptions.$StrVerifyServerPid }
+						Else
+						{ $true }
 						# 0.16: how long a server with Wait set keeps its window open after the pipe exits (see Wait-PipeServerExit).
 						$StrWaitSeconds = if ($null -ne $MyParameters.$StrWaitSeconds)
 						{ [int]$MyParameters.$StrWaitSeconds }
@@ -390,6 +406,18 @@
 						{ $MyOptions.$StrNonce }
 						Else
 						{ $null }
+						# 0.18: the PID of the server process this session started (set by Start-PipeSession); the client refuses to
+						# send its nonce to a pipe served by any other process. $null = not known, no check.
+						$StrExpectedServerPid = if ($MyParameters.$StrExpectedServerPid)
+						{ [uint32]$MyParameters.$StrExpectedServerPid }
+						Else
+						{ $null }
+						$StrVerifyServerPid = if ($null -ne $MyParameters.$StrVerifyServerPid)
+						{ [bool]$MyParameters.$StrVerifyServerPid }
+						Elseif ($null -ne $MyOptions.$StrVerifyServerPid)
+						{ [bool]$MyOptions.$StrVerifyServerPid }
+						Else
+						{ $true }
 						# 0.13 PID hand-off: client option. When set (VHDTools hand-off), the client does a HANDIN (send marker,
 						# receive the nonce) instead of presenting a nonce it does not have.
 						$StrHandin = if ($MyParameters.$StrHandin -or $MyOptions.$StrHandin)

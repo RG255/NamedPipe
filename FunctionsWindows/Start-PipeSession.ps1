@@ -95,7 +95,9 @@
 	}
 
 	# Step 6: Start the server
-	$Private:SendRequestParams.$StrDataObject.$StrServerPID = Start-PipeServerOrClient -SerialData (ConvertTo-Serial -Object $Private:ServerClientParams)
+	$Private:SendRequestParams.$StrDataObject.$StrServerPID = Start-PipeServerOrClient -SerialData (ConvertTo-Serial -Object $Private:ServerClientParams -Encoding Utf8)
+	# The client connects only to a pipe served by the process just started (checked before it sends the nonce).
+	$Private:ServerClientParams.$StrExpectedServerPid = [uint32]$Private:SendRequestParams.$StrDataObject.$StrServerPID
 	If ($Private:ServerClientParams.$StrInfoDisplay -band 2)
 	{Show-VerboseData -Object $Private:SendRequestParams.$StrDataObject -Display -Title 'DataObject Before Client started'}
 
@@ -105,7 +107,7 @@
 	$Private:SendRequestParams.$StrDataObject.$StrClientPID = $Pid
 	$Private:SendRequestParams.$StrDataObject.$StrClientUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
-	$Private:ServerClientParams.$StrPipeInfo = Start-PipeServerOrClient -SerialData (ConvertTo-Serial -Object $Private:ServerClientParams)
+	$Private:ServerClientParams.$StrPipeInfo = Start-PipeServerOrClient -SerialData (ConvertTo-Serial -Object $Private:ServerClientParams -Encoding Utf8)
 	$Private:SendRequestParams.$StrPipeInfo = $Private:ServerClientParams.$StrPipeInfo
 
 	If ($Private:ServerClientParams.$StrInfoDisplay -band 2)

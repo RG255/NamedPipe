@@ -1,4 +1,40 @@
-﻿# NamedPipe Changelog
+# NamedPipe Changelog
+
+## Version 0.18 - 2026-11-11 (supersedes 0.17)
+
+Theme: tighter session set-up - who a pipe client or server will talk to is now checked, and the frame carries a direction.
+
+### Changed (wire format - both ends are always the same module version; a 0.17 peer is refused with the usual "not an NPF3 frame" message)
+
+- **Frame direction.** Frames are now `NPF3|<direction>|<id>|<length>|<mac>|<payload>` (`C` = client request, `S` = server response or
+  progress). The direction is covered by the authentication code and `Receive-Data` checks it against the end that is reading, so a
+  request frame is never accepted as a response (or the reverse). `ConvertTo-PipeFrame`, `ConvertFrom-PipeFrame` and
+  `Get-PipeFrameMac` (internal) gained a mandatory `-Direction`.
+- **The client checks the server process.** When `Start-PipeSession` connects, the client first confirms (kernel-reported PID) that the
+  pipe is served by the server process it started, and refuses the connection otherwise, before sending the nonce. The same check guards
+  the command token sent to the health pipe. The option `VerifyServerPid` (default `$true`) switches the check off for diagnosis only.
+  The client also connects with identification-level impersonation (the server can learn who connected, nothing more).
+
+- **Smaller messages.** The serialized text (message payloads and the server start-up data on the command line) is UTF-8 before Base64 instead of UTF-16: about half the length (typical request 2,932 to 1,468 characters on PowerShell 7; 5,572 to 2,788 on 5.1), so more fits in the 32,767-character command line. Receivers still read the older UTF-16 form. Values keep their exact text, including accented characters, emoji and whitespace-only strings.
+
+### Added
+
+- **Nonce delivery to an elevated server.** An elevated server is no longer given the session nonce as part of its start-up command. The
+  server adopts the nonce the client presents as its first line, and only from the process that started it (kernel-reported PID); any
+  other connection is turned away and the server keeps waiting. Automatic whenever the server is started elevated; the option
+  `NonceViaPipe` forces it on (`$true`) or off (`$false`) for every server. A non-elevated server keeps the earlier behaviour unless
+  the option is set.
+- **`RequestPolicy` Audit mode.** An optional `Mode = 'Audit'` key in the policy hashtable evaluates the policy but blocks nothing: a request
+  the policy would have rejected runs unchanged, and one Warning entry (Application log, source `NamedPipe`, event id 4514) names the
+  request id, the first command and the reasons, never the request text or argument values. Absent or any other value enforces as before.
+  Intended for finding out what a real workflow sends before an `AllowedCommands` list is written. See the User Guide.
+- Internal helpers: `Get-PipePeerProcessId`, `New-PipeNonce`, `Write-PipePolicyAuditEvent`, `Write-PipeEventLogEntry`.
+- Tests: `Tests\Branch018.Tests.ps1` (32 tests; four start a non-elevated server). Existing frame tests follow the new frame. Suite total 335 per host (347 with the serializer tests below).
+
+### Changed
+
+- The session nonce and the `Test-PipeSession` challenge come from the operating system's cryptographic generator (same 32-hex shape).
+- Consumers pin `RequiredVersion 0.18` once they move; 0.17 stays available until nothing pins it.
 
 ## Version 0.17 - 2026-11-04 (supersedes 0.16)
 

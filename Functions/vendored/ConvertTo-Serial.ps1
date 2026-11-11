@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\ConvertTo-Serial.ps1 by Sync-SharedUtilities [SHA256 B2A5D38744C001BB7C30C08F565DBA1C41CAAFBF26D84791B1C4D0754FBC87DD] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\ConvertTo-Serial.ps1 by Sync-SharedUtilities [SHA256 1EDB539ED804F10793AABA421C1ADCD14702687D0C64608DB46E9D4550FED187] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function ConvertTo-Serial
 {
 	<#
@@ -41,6 +41,10 @@ Function ConvertTo-Serial
 		this size, it will be split into multiple chunks. Default is 32768 (32KB).
 		Set to 0 to disable chunking for backward compatibility.
 
+		.PARAMETER Encoding
+		Text encoding of the JSON before Base64: 'Utf16' (default, the original format) or 'Utf8'
+		(about 1.5x shorter output for ASCII-heavy data). ConvertFrom-Serial detects either one.
+
 		.EXAMPLE
 		ConvertTo-Serial -Object $MyHashtable
 		Serializes a hashtable (automatically chunked if > 32KB).
@@ -79,7 +83,10 @@ Function ConvertTo-Serial
 		[int]$Depth = 2,
 
 		[ValidateRange(0, [int]::MaxValue)]
-		[int]$ChunkSize = 32768
+		[int]$ChunkSize = 32768,
+
+		[ValidateSet('Utf16', 'Utf8')]
+		[string]$Encoding = 'Utf16'
 	)
 
 	Begin
@@ -111,8 +118,8 @@ Function ConvertTo-Serial
 			# Convert to JSON and compress to minimize size
 			$json = $xml | ConvertTo-Json -Compress
 
-			# Encode as Unicode bytes then convert to Base64 string
-			$bytes = [Text.Encoding]::Unicode.GetBytes($json)
+			# Encode as UTF-16 (default) or UTF-8 bytes, then convert to Base64 string
+			$bytes = If ($Encoding -eq 'Utf8') { [Text.UTF8Encoding]::new($false).GetBytes($json) } Else { [Text.Encoding]::Unicode.GetBytes($json) }
 			$base64 = [Convert]::ToBase64String($bytes)
 
 			# If no chunking requested or data fits in one chunk, return as-is

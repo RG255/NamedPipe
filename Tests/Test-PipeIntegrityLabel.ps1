@@ -80,17 +80,17 @@ function Test-ChildAt {
 	$name = 'lbl-' + [guid]::NewGuid().ToString('N')
 	$srv  = New-ModuleLabeledPipe -Name $name
 	$iar  = $srv.BeginWaitForConnection($null,$null)
-	$child = @"
-`$g = whoami /groups /fo csv | ConvertFrom-Csv
-`$il = (`$g | Where-Object { `$_.'Group Name' -match 'Mandatory Level' }).'Group Name'
-`$ilc = if (`$il -match 'Low') {1} elseif (`$il -match 'Medium') {2} elseif (`$il -match 'High') {3} else {0}
-`$rc = 30
-try { `$c = New-Object System.IO.Pipes.NamedPipeClientStream('.','$name','InOut'); `$c.Connect(3000); `$c.Dispose(); `$rc = 10 }
-catch { `$e = `$_.Exception; while (`$e.InnerException) { `$e = `$e.InnerException }
-        `$rc = if (`$e -is [System.UnauthorizedAccessException]) {20} elseif (`$e -is [System.TimeoutException]) {21} elseif (`$e -is [System.IO.IOException]) {22} else {25} }
-exit (`$ilc*100 + `$rc)
-"@
-	$enc  = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($child))
+	# The child's work is one short, readable -Command on its command line. It contains no double quote (CreateProcessAsUser
+	# gets the string as-is) and nothing is read from disk or the environment, so there is no file or variable for another
+	# process to tamper with, and no encoded payload (such launches are flagged by Defender). The pipe name is a GUID.
+	$child = @(
+		'$g = whoami /groups /fo csv | ConvertFrom-Csv'
+		'$il = ($g | Where-Object { $_.''Group Name'' -match ''Mandatory Level'' }).''Group Name'''
+		'$ilc = if ($il -match ''Low'') {1} elseif ($il -match ''Medium'') {2} elseif ($il -match ''High'') {3} else {0}'
+		'$rc = 30'
+		('try {{ $c = New-Object System.IO.Pipes.NamedPipeClientStream(''.'',''{0}'',''InOut''); $c.Connect(3000); $c.Dispose(); $rc = 10 }} catch {{ $e = $_.Exception; while ($e.InnerException) {{ $e = $e.InnerException }}; $rc = if ($e -is [System.UnauthorizedAccessException]) {{20}} elseif ($e -is [System.TimeoutException]) {{21}} elseif ($e -is [System.IO.IOException]) {{22}} else {{25}} }}' -f $name)
+		'exit ($ilc*100 + $rc)'
+	) -join '; '
 	# Windows PowerShell 5.1 for the CHILD, deliberately - not $PSHOME\pwsh.exe.
 	#
 	# PowerShell 7 cannot START at Low integrity: it writes to per-user locations during startup that
@@ -107,7 +107,7 @@ exit (`$ilc*100 + `$rc)
 	# NamedPipeServerStreamAcl is .NET Core only.
 	$ChildHost = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 	$code = -1
-	try { $code = [LowILLauncher]::RunAtIntegrity($ChildHost, ('"{0}" -NoProfile -EncodedCommand {1}' -f $ChildHost, $enc), $IlSid) }
+	try { $code = [LowILLauncher]::RunAtIntegrity($ChildHost, ('"{0}" -NoProfile -Command {1}' -f $ChildHost, $child), $IlSid) }
 	catch { Write-Host ("  {0,-14} LAUNCH FAILED: {1}" -f $Label, $_.Exception.Message) -ForegroundColor Red }
 	if ($iar.AsyncWaitHandle.WaitOne(300)) { try { $srv.EndWaitForConnection($iar) } catch {} }
 	$srv.Dispose()

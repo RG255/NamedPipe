@@ -89,9 +89,10 @@
 	# the id the response must carry; the server answers (and sends progress) with the id of the request it last
 	# accepted. Both ends are always the same module version, so there is no unframed fallback.
 	If ($DataObject.$StrServerPID -eq $PID)
-	{ $Private:FrameId = [int]$PipeInfo.$StrFrameId }
+	{ $Private:FrameId = [int]$PipeInfo.$StrFrameId; $Private:FrameDir = 'S' }
 	Else
 	{
+		$Private:FrameDir = 'C'
 		$Private:FrameId = [int]$PipeInfo.$StrFrameSeq + 1
 		$PipeInfo.$StrFrameSeq = $Private:FrameId
 		$PipeInfo.$StrExpectFrameId = $Private:FrameId
@@ -116,7 +117,7 @@
 		}
 
 		# Serialize with chunking and depth settings from PipeInfo
-		$serialized = ConvertTo-Serial -Object $DataObject -ChunkSize $PipeInfo.$StrChunkSize -Depth $PipeInfo.$StrDepth
+		$serialized = ConvertTo-Serial -Object $DataObject -ChunkSize $PipeInfo.$StrChunkSize -Depth $PipeInfo.$StrDepth -Encoding Utf8
 
 		if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 		{
@@ -154,7 +155,7 @@
 				# its own comment. The reassembled payload itself still round-trips through full
 				# PSSerializer fidelity once, after all chunks are back together - only the per-chunk
 				# TRANSPORT wrapper is now lightweight.
-				$chunkLine = ConvertTo-PipeFrame -Payload ('JCHUNK:' + ($chunk | ConvertTo-Json -Compress)) -Id $Private:FrameId -Key $PipeInfo.$StrFrameKey
+				$chunkLine = ConvertTo-PipeFrame -Payload ('JCHUNK:' + ($chunk | ConvertTo-Json -Compress)) -Direction $Private:FrameDir -Id $Private:FrameId -Key $PipeInfo.$StrFrameKey
 				$PipeInfo.$StrWriter.WriteLine($chunkLine)
 				$PipeInfo.$StrWriter.Flush()
 
@@ -172,7 +173,7 @@
 			{
 				Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') DEBUG Send-Data: Single message, about to WriteLine" -ForegroundColor Yellow
 			}
-			$PipeInfo.$StrWriter.WriteLine((ConvertTo-PipeFrame -Payload ([string]$serialized) -Id $Private:FrameId -Key $PipeInfo.$StrFrameKey))
+			$PipeInfo.$StrWriter.WriteLine((ConvertTo-PipeFrame -Payload ([string]$serialized) -Direction $Private:FrameDir -Id $Private:FrameId -Key $PipeInfo.$StrFrameKey))
 			$PipeInfo.$StrWriter.Flush()
 			if ($PipeInfo.$StrInfoDisplay -band $InfoDisplayBitDebug)
 			{
