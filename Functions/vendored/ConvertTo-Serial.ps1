@@ -1,4 +1,4 @@
-﻿# VENDORED from CommonScripts\0.2\Functions\ConvertTo-Serial.ps1 by Sync-SharedUtilities [SHA256 2131AF0470639941AF74A265B9B2F1C54CB06B1153ACB7A34A1D949A36210260] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
+﻿# VENDORED from CommonScripts\0.2\Functions\ConvertTo-Serial.ps1 by Sync-SharedUtilities [SHA256 B2A5D38744C001BB7C30C08F565DBA1C41CAAFBF26D84791B1C4D0754FBC87DD] - DO NOT EDIT (edit the master; Deploy-Modules re-syncs).
 Function ConvertTo-Serial
 {
 	<#
@@ -15,7 +15,7 @@ Function ConvertTo-Serial
 
 		The serialization process:
 		1. Object -> CliXml (PSSerializer)
-		2. Remove CR/LF/Tab and excess spaces
+		2. Remove the serializer's line breaks and indentation (value text is left untouched)
 		3. Wrap in JSON (handles quote escaping)
 		4. Encode as Base64
 		5. If ChunkSize specified and data exceeds it, split into chunks
@@ -100,11 +100,13 @@ Function ConvertTo-Serial
 			# Serialize the PowerShell object to XML with specified depth
 			$xml = [Management.Automation.PSSerializer]::Serialize($Object, $Depth)
 
-			# Remove carriage returns, line feeds, and tabs for compactness
-			$xml = $xml -replace '([\r]|[\n]|[\t])'
+			# Strip the serializer's own pretty-printing (line break plus indentation) for compactness.
+			# Text nodes are untouched: PSSerializer encodes tabs/newlines inside values (_x0009_ etc.), so a
+			# whitespace-only string value keeps its spaces.
+			$xml = $xml -replace '(\r\n|\n|\r)[ ]*'
 
-			# Remove unnecessary spaces between XML tags
-			$xml = $xml -replace '>[ ]+<', '><'
+			# Any remaining raw CR/LF/tab cannot be indentation; drop them as before
+			$xml = $xml -replace '[\r\n\t]'
 
 			# Convert to JSON and compress to minimize size
 			$json = $xml | ConvertTo-Json -Compress

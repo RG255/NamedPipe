@@ -9,6 +9,9 @@
 
 ### Fixed (independent code review, 2026-11-10; no protocol or option change)
 
+- Serialized requests and results: a string value made only of spaces (for example `'   '`) now arrives unchanged instead of
+  as an empty string. Message size and wire format are unchanged.
+
 - Health pipe: all commands, including the internal stop signal, are now authenticated the same way; the listener's reads are
   time-bounded and it backs off when pipe creation keeps failing instead of retrying at full speed.
 - `Test-PipeSession` and the command helpers bound their write as well as the reply wait and return `$false` / `<no reply>` on timeout.
