@@ -19,6 +19,13 @@
 			.PARAMETER Dataset
 			-Dataset One of 'PipeParams', 'DataObject','ServerClientParams','SendRequestParams','PipeInfo'.
 
+			.PARAMETER MyOptions
+			-MyOptions
+
+			Optional. The options object (as returned for the MyOptions dataset) whose values fill in anything -MyParameters leaves
+			unset when the ServerClientParams dataset is built. It must be passed explicitly: a variable named MyOptions in the
+			caller's scope is ignored.
+
 			.EXAMPLE
 			Set-ObjectParameterSet -MyParameters Value -Dataset Value
 			Sets up the requested dataset
@@ -49,9 +56,16 @@
 		[Parameter(ParameterSetName = 'Server')]
 		[Switch]$Server,
 		[Parameter(ParameterSetName = 'Client')]
-		[Switch]$Client
+		[Switch]$Client,
+		[Parameter(ParameterSetName = 'Server')]
+		[Parameter(ParameterSetName = 'Client')]
+		[Parameter(ParameterSetName = 'Either')]
+		[AllowNull()]
+		[Object]$MyOptions = $Null
 	)
 	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
+
+	# $MyOptions is only ever the -MyOptions parameter: a variable of that name in the caller's scope is never read.
 
 	# 2026-09-15: wrapped in Try/Catch - this function had NO error handling anywhere despite being
 	# called by nearly everything (Start-PipeSession, Start-PipeServerOrClient, Send-ProgressInfo,

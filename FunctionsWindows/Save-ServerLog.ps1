@@ -72,17 +72,17 @@
 
 	$Script:ServerLogSaved = $true
 
+	$Private:Folder = $null
 	try
 	{
 		$Private:LogDir = Join-Path -Path $env:APPDATA -ChildPath 'NamedPipe-Logs'
-		if (-not (Test-Path -Path $Private:LogDir))
-		{ $null = New-Item -ItemType Directory -Path $Private:LogDir -Force }
-		# The folder is user-writable: if it has been replaced by a junction/symlink, write nothing through it.
-		if ((Get-Item -LiteralPath $Private:LogDir -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return $null }
+		# The folder is user-writable and this may run elevated: it is opened once through a handle that refuses a junction or
+		# symbolic link and cannot be swapped while held, and the file is created through it (see Open-SafeLogFolder).
+		$Private:Folder = Open-SafeLogFolder -Path $Private:LogDir -Create
 
 		# Pipe Name is already unique per session (Get-NewPipeName = Prefix-<FileTime>). Sanitise for a filename.
 		$Private:Safe = if ($PipeName) { $PipeName -replace '[^A-Za-z0-9._-]', '_' } else { 'unknown' }
-		$Private:LogFile = Join-Path -Path $Private:LogDir -ChildPath ('server-{0}-{1}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $Private:Safe)
+		$Private:LogLeaf = 'server-{0}-{1}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $Private:Safe
 
 		$Private:Out = [System.Collections.Generic.List[string]]::new()
 		$Private:Out.Add('=== NamedPipe server diagnostics log ===')
@@ -101,7 +101,7 @@
 		# Literal replacement string (no $ tokens), so no .NET regex substitution risk.
 		$Private:Text = [regex]::Replace($Private:Text, '[A-Za-z]:\\[^\r\n]*', '<path-redacted>')
 
-		[System.IO.File]::WriteAllText($Private:LogFile, $Private:Text, [System.Text.UTF8Encoding]::new($false))
+		$Private:LogFile = $Private:Folder.WriteNewFile($Private:LogLeaf, $Private:Text)
 		# 0.11 hardening (4.5 step 1d): on a FAILURE, also drop a Windows Event Log pointer at this file.
 		# Wrapped - if the 'NamedPipe' source is not registered (Register-PipeEventSource / Deploy-Modules) or
 		# we lack permission, degrade silently to file-only. .NET API is used (Write-EventLog is absent in PS7).
@@ -123,7 +123,12 @@
 	}
 	catch
 	{
-		# Logging must never affect the session - swallow any failure.
+		# Logging must never affect the session - swallow any failure (a refused folder is audited by Open-SafeLogFolder).
+		Write-Verbose ('Save-ServerLog: no log written - {0}' -f $_.Exception.Message)
 		return $null
+	}
+	finally
+	{
+		if ($Private:Folder) { $Private:Folder.Dispose() }
 	}
 }

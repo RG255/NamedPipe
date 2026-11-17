@@ -70,7 +70,7 @@
 	}
 
 	# Step 4: Create ServerClientParams (server side) and SendRequestParams
-	$Private:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Private:MyOptions
+	$Private:ServerClientParams = Set-ObjectParameterSet -Server -Dataset $StrServerClientParams -MyParameters $Private:MyOptions -MyOptions $Private:MyOptions
 	# Carry the CLIENT's function-trace settings across to a spawned server (2026-09-16). Environment
 	# variables ARE inherited by a normally-spawned child process, but NOT across a -Verb RunAs
 	# elevation boundary (that goes through a separate broker process which gives the new process a
@@ -102,7 +102,7 @@
 	{Show-VerboseData -Object $Private:SendRequestParams.$StrDataObject -Display -Title 'DataObject Before Client started'}
 
 	# Step 7: Switch to client and connect
-	$Private:ServerClientParams = Set-ObjectParameterSet -Client -Dataset $StrServerClientParams -MyParameters $Private:ServerClientParams
+	$Private:ServerClientParams = Set-ObjectParameterSet -Client -Dataset $StrServerClientParams -MyParameters $Private:ServerClientParams -MyOptions $Private:MyOptions
 
 	$Private:SendRequestParams.$StrDataObject.$StrClientPID = $Pid
 	$Private:SendRequestParams.$StrDataObject.$StrClientUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name

@@ -22,16 +22,20 @@
 	If (1 -band ($env:MyFunctionTraceEnabled -as [Int])) { Write-MyFunctionTrace }
 
 	if ($RetentionDays -le 0) { return }   # 0 = keep forever
+	$Private:Folder = $null
 	try
 	{
 		$Private:LogDir = Join-Path -Path $env:APPDATA -ChildPath 'NamedPipe-Logs'
-		if (-not (Test-Path -Path $Private:LogDir)) { return }
-		# A junction/symlink here would redirect the deletes: leave a redirected folder alone.
-		if ((Get-Item -LiteralPath $Private:LogDir -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
-		$Private:Cutoff = (Get-Date).AddDays(-$RetentionDays)
-		Get-ChildItem -Path $Private:LogDir -Filter 'server-*.log' -File -ErrorAction SilentlyContinue |
-			Where-Object { $_.LastWriteTime -lt $Private:Cutoff } |
-			ForEach-Object { try { Remove-Item -Path $_.FullName -Force -ErrorAction Stop } catch { Write-MyCatchAudit -Source 'Remove-OldServerLog: delete one expired log file - best-effort retention cleanup, one locked/undeletable file must not stop the rest' -ErrorRecord $_ } }
+		# Deletes go through the folder handle and a handle per file, so a junction or link swapped in cannot redirect them
+		# (see Open-SafeLogFolder). A redirected folder is refused and audited there; a missing folder means nothing to prune.
+		try { $Private:Folder = Open-SafeLogFolder -Path $Private:LogDir }
+		catch [System.IO.DirectoryNotFoundException] { return }
+		$null = $Private:Folder.RemoveOlderThan('server-*.log', (Get-Date).AddDays(-$RetentionDays).ToUniversalTime())
+		foreach ($Private:Skipped in $Private:Folder.Refused)
+		{ Write-MyCatchAudit -Source ('Remove-OldServerLog: left a log entry alone because it is not an ordinary file in the log folder - {0}' -f $Private:Skipped) -ErrorRecord ([System.Management.Automation.ErrorRecord]::new([System.IO.IOException]::new($Private:Skipped), 'LogEntryRefused', [System.Management.Automation.ErrorCategory]::SecurityError, $null)) }
+		foreach ($Private:Failed in $Private:Folder.Errors)
+		{ Write-MyCatchAudit -Source 'Remove-OldServerLog: delete one expired log file - best-effort retention cleanup, one locked/undeletable file must not stop the rest' -ErrorRecord ([System.Management.Automation.ErrorRecord]::new([System.IO.IOException]::new($Private:Failed), 'LogDeleteFailed', [System.Management.Automation.ErrorCategory]::WriteError, $null)) }
 	}
 	catch { Write-MyCatchAudit -Source 'Remove-OldServerLog: best-effort log-retention sweep - a failure here (e.g. cannot enumerate the log folder) just means old logs are not pruned this run' -ErrorRecord $_ }
+	finally { if ($Private:Folder) { $Private:Folder.Dispose() } }
 }

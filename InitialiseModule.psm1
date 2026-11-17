@@ -164,8 +164,9 @@ try
 		}
 		Catch
 		{
-			$Msg = 'Variable:[{0}] Failed to create Value: [{1}]' -f $Item, $Params.Value
-			Write-Information -MessageData $Msg -InformationAction Continue
+			# A variable that cannot be created stops the import (the module would otherwise load half-initialised).
+			$Msg = 'Module [{0}]: variable [{1}] could not be created or exported at import (value [{2}]): {3}' -f $ModuleName, $Item, $Params.Value, $_.Exception.Message
+			throw [System.InvalidOperationException]::new($Msg, $_.Exception)
 		}
 	}
 	Function Get-Psd1Data
@@ -456,9 +457,9 @@ try
 					if ($shouldExport)
 					{
 						Export-ModuleMember -Function $funcName -ErrorAction Stop
-						If ($FWInfoOn)
+						If ($FLInfoOn)
 						{
-							$Msg = ' W-Function exported:[{0}]' -f $Item.FullName
+							$Msg = ' L-Function exported:[{0}]' -f $Item.FullName
 							Write-Information -MessageData $Msg -InformationAction Continue
 						}
 					}
@@ -497,9 +498,9 @@ try
 					if ($shouldExport)
 					{
 						Export-ModuleMember -Function $funcName -ErrorAction Stop
-						If ($FWInfoOn)
+						If ($FMInfoOn)
 						{
-							$Msg = ' W-Function exported:[{0}]' -f $Item.FullName
+							$Msg = ' M-Function exported:[{0}]' -f $Item.FullName
 							Write-Information -MessageData $Msg -InformationAction Continue
 						}
 					}
@@ -525,7 +526,7 @@ Catch
 	# Module IMPORT time - same reasoning as the earlier throw in this file: runs before the module has
 	# finished loading, let alone before any pipe exists. A throw here fails Import-Module itself;
 	# there is no pipe to collapse.
-	throw 'Unable to initialise module: {0}' -f $ModuleName
+	throw ('Unable to initialise module: {0} - {1}' -f $ModuleName, ($ImportError.Exception.Message).Replace("`r`n", ' '))
 }
 
 # Catch-audit: surface any PERSISTED entries from a previous session/crash, once per process across

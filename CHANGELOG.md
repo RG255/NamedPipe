@@ -33,6 +33,16 @@ Theme: tighter session set-up - who a pipe client or server will talk to is now 
 
 ### Changed
 
+- `Set-ObjectParameterSet` takes the options it falls back on only through the new `-MyOptions` parameter. It no longer reads a variable named
+  `MyOptions` from the caller's scope, so its result no longer depends on invisible caller state; `Start-PipeSession` passes `-MyOptions`
+  explicitly. A script that relied on a global `$MyOptions` being picked up must pass `-MyOptions $MyOptions`.
+- The server log folder (`%APPDATA%\NamedPipe-Logs`) is opened once through a handle that refuses a junction or symbolic link and cannot be
+  renamed or replaced while held; log files are created, and expired ones deleted, through that folder (each file through its own checked
+  handle). A link swapped in between the check and the use can no longer redirect an elevated write or delete: the folder is refused, nothing
+  is written or deleted, and the refusal is recorded in the catch audit. Ordinary folders behave as before. Internal helper: `Open-SafeLogFolder`.
+- A variable that cannot be created at import now stops the import with a clear error naming the module and the variable, instead of leaving
+  the module half-loaded. The Linux and macOS loading loops test their own information flags (`FLInfoOn`, `FMInfoOn`) instead of the Windows one.
+- Tests: `Tests\LogFolderAndOptions.Tests.ps1` (22) and `Tests\ModuleImport.Tests.ps1` (8).
 - The session nonce and the `Test-PipeSession` challenge come from the operating system's cryptographic generator (same 32-hex shape).
 - Consumers pin `RequiredVersion 0.18` once they move; 0.17 stays available until nothing pins it.
 
